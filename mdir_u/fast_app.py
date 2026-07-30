@@ -347,10 +347,10 @@ class LargeDirectoryFilePane(EditablePathFilePane):
 class FastFileManagerApp(EditablePathApp):
     """File manager with cached, batched large-directory listings."""
 
-    TITLE = "MDIR-P"
+    TITLE = "MDIR-U"
     SUB_TITLE = (
-        "Dual Pane File Manager / Large Directory Mode / "
-        "Codex Quick / Korean IME"
+        "Ubuntu and Universal File Manager / Large Directory Mode / "
+        "Codex Quick"
     )
     CSS = EditablePathApp.CSS + f"""
     FilePane DataTable {{
@@ -424,7 +424,7 @@ class FastFileManagerApp(EditablePathApp):
         """Compose MDIR with an opaque startup cover over the first frames."""
         yield from super().compose()
         yield Static(
-            "MDIR-P\nStarting file panels...",
+            "MDIR-U\nStarting file panels...",
             id="startup_cover",
         )
 

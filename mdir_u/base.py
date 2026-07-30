@@ -25,7 +25,7 @@ legacy.MDirDataTable = SlowRenameDataTable
 legacy.PromptScreen = CompactPromptScreen
 
 
-# MDIR-P uses compact, cancellable dialogs for all bottom-menu prompts.
+# MDIR-U uses compact, cancellable dialogs for all bottom-menu prompts.
 # The inherited action methods resolve ConfirmScreen from the legacy module at
 # runtime, so this replacement also covers Move and Delete.
 legacy.ConfirmScreen = CompactConfirmScreen
@@ -59,8 +59,8 @@ def windows_volume_label(drive: str) -> str:
 
 
 class BaseApp(AIShellApp):
-    TITLE = "MDIR-P"
-    SUB_TITLE = "Dual Pane File Manager / Codex AI / Visible Korean IME Cursor"
+    TITLE = "MDIR-U"
+    SUB_TITLE = "Ubuntu and Universal File Manager / Codex AI"
 
     def action_copy(self) -> None:
         """Copy selected items, with Save As support for a single item."""

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mdir-p"
-version = "2.15.0"
-description = "A fast dual-pane PowerShell file manager with AI and document preview."
+name = "mdir-u"
+version = "0.1.0"
+description = "A fast dual-pane Ubuntu and universal terminal file manager with AI and document preview."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -16,7 +16,8 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
-    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Topic :: Desktop Environment :: File Managers",
 ]
@@ -30,12 +31,13 @@ preview = [
 ]
 
 [project.scripts]
-m = "mdir.__main__:main"
-mdir = "mdir.__main__:main"
+u = "mdir_u.__main__:main"
+U = "mdir_u.__main__:main"
+mdir-u = "mdir_u.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/jtl-sun/mdir-p"
-Issues = "https://github.com/jtl-sun/mdir-p/issues"
+Homepage = "https://github.com/jtl-sun/mdir-u"
+Issues = "https://github.com/jtl-sun/mdir-u/issues"
 
 [tool.setuptools.packages.find]
-include = ["mdir*"]
+include = ["mdir_u*"]

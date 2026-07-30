@@ -1,112 +1,95 @@
-# MDIR-P
+# MDIR-U
 
-**MDIR for PowerShell. MDIR Plus.**
+**MDIR for Ubuntu. MDIR Universal.**
 
-MDIR-P is a fast, keyboard-friendly dual-pane file manager for Windows
-PowerShell and Windows Terminal. It brings the direct workflow of classic
-DOS file managers to a modern interface with optional AI and document
-preview features.
+MDIR-U is a fast, keyboard-oriented dual-pane file manager for Ubuntu and
+other Linux terminals. It combines the direct workflow of classic MDIR and
+Total Commander with large-directory performance, document preview, and an
+optional AI command panel.
 
-## Dedication
-
-MDIR-P is a tribute to **Choi Jung Han**, the developer of the legendary
-DOS-era file manager **MDIR**. His work inspired generations of users to
-manage files quickly and efficiently from the keyboard.
+MDIR-U is a tribute to **Choi Jung Han**, developer of the legendary MDIR
+file manager from the DOS era.
 
 ## Highlights
 
-- Fast dual-pane file management inspired by MDIR and Total Commander
-- Responsive handling of folders containing 20,000 or more image files
-- High-resolution preview for images, PDF documents, and Excel workbooks
-- Mouse-wheel zoom and drag-to-pan in Preview
-- Optional AI terminal with Codex, PowerShell, and Ollama providers
-- Copy, move, rename, delete, search, drive selection, and editable paths
-- Safe, size-limited text viewing and editing with `F3` and `F4`
-- Total Commander-inspired default theme
-- Windows Terminal and Korean IME support
+- Fast dual-pane file management with editable paths
+- Cached and batched listings for directories with tens of thousands of files
+- Preview for images, PDF documents, and Excel workbooks
+- Safe F3 View and F4 Edit for bounded text files
+- AI panel for Codex, Codex Quick, Codex Local, Ollama, and other CLIs
+- Direct local Bash/Shell commands outside the Codex sandbox
+- Ubuntu locations and mounted filesystem selection
+- Total Commander-inspired dark theme
+- English UI with Unicode filename support
 
-## Requirements
+Preview is disabled at startup. Press `Ctrl+F3` to show or hide it.
 
-- Windows 10 or Windows 11
-- Python 3.11 or newer
-- PowerShell or Windows Terminal
+## Ubuntu installation
 
-## Install
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip xdg-utils poppler-utils
 
-```powershell
-git clone https://github.com/jtl-sun/mdir-p.git
-cd mdir-p
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[preview]"
+git clone https://github.com/jtl-sun/mdir-u.git
+cd mdir-u
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[preview]"
 ```
 
-## Run
+Start MDIR-U with any of these case-sensitive Linux commands:
 
-After installation, any of these commands starts MDIR-P:
-
-```powershell
-m
-M
-mdir
+```bash
+u
+U
+mdir-u
 ```
 
-PowerShell command names are case-insensitive, so `m` and `M` run the same
-launcher. The longer `mdir` command is provided as an alternative.
+For a local source checkout, you can also run:
 
-Without installation, run:
-
-```powershell
-python -m mdir
-# or
-.\start_mdir_p.ps1
+```bash
+./start_mdir_u.sh
+python3 -m mdir_u
 ```
 
-## Main Keys
+## Controls
 
 | Key | Action |
 | --- | --- |
-| `Tab`, `Left`, `Right` | Switch file pane |
-| `Enter` | Open a file or directory |
-| `Space` | Mark an item |
+| `Tab`, `Left`, `Right` | Switch active pane |
+| `Enter` | Open directory or file |
+| `Backspace` | Parent directory |
+| `Space` | Mark or unmark |
 | `F2` | Rename |
 | `F3` | View a supported text file |
 | `F4` | Edit a supported text file |
 | `F5` | Copy |
 | `F6` | Move |
-| `F7` | Create a directory |
+| `F7` | Create directory |
 | `F8` | Delete |
-| `F9` | Select a drive |
+| `F9` | Select a location or mount |
 | `F10` | Quit |
-| `F12` | Toggle the AI terminal |
+| `F12` | Toggle AI/file pane |
 | `Ctrl+F` | Advanced search |
-| `Ctrl+F3` | Toggle Preview |
-| `Ctrl+P` | Open the command palette and theme selector |
+| `Ctrl+F3` | Toggle document preview |
+| `Ctrl+H` | Toggle hidden files |
+| `Shift+F10` | Open a terminal at the selected directory |
 
-## AI and Local Commands
+## AI and local shell
 
-Codex uses workspace restrictions by default. PowerShell and local AI modes
-can run commands directly on the computer, so use them only when full local
-access is intended.
+The AI panel is optional. Install and authenticate each provider's CLI
+separately. Codex uses workspace restrictions by default. `Codex Local` and
+`Shell` can directly modify files or install software with the permissions of
+the current Linux account, so review commands before running them.
 
-## Project Layout
+## WSL notes
 
-```text
-mdir/
-|-- app.py          Main application and event routing
-|-- core.py         Core file-manager widgets and operations
-|-- file_pane.py    Cached metadata and editable paths
-|-- fast_app.py     Large-directory and startup optimizations
-|-- ai/             AI providers and conversation panel
-|-- preview/        Image, PDF, and Excel preview
-`-- ui/             Dialogs, search, rename, and text viewer
-```
+MDIR-U runs in WSL Ubuntu. Windows drives appear under `/mnt`, such as
+`/mnt/c` and `/mnt/s`. Linux GUI actions such as opening a document require
+WSLg or another configured desktop opener.
 
-## Validation
+## License
 
-```powershell
-python -m mdir --check
-python -m unittest discover -s tests -v
-```
-
-MDIR-P is released under the [MIT License](LICENSE).
+MDIR-U is released under the [MIT License](LICENSE). Attribution and the
+license notice must be preserved when redistributing the software.

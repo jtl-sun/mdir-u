@@ -1,4 +1,4 @@
-"""MDIR-P: a fast dual-pane PowerShell file manager with optional AI tools."""
+"""MDIR-U: a fast dual-pane Ubuntu and universal terminal file manager."""
 
 from typing import TYPE_CHECKING
 

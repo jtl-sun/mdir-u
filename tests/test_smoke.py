@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 import os
+import base64
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from mdir.app import MDirApp
-from mdir.preview.native import (
+from mdir_u.app import MDirApp
+from mdir_u.preview.native import (
     PaneLayout,
     WindowRectangle,
     calculate_pane_rectangle,
 )
-from mdir.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
+from mdir_u.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
     async def test_ai_panel_is_loaded_only_when_requested(self) -> None:
         app = MDirApp()
-        self.assertNotIn("mdir.ai.panel", sys.modules)
+        self.assertNotIn("mdir_u.ai.panel", sys.modules)
 
         async with app.run_test(size=(120, 35)) as pilot:
             await pilot.pause(0.05)
@@ -89,7 +90,12 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 image = root / "preview.png"
-                image.write_bytes(b"\x89PNG\r\n\x1a\n")
+                image.write_bytes(
+                    base64.b64decode(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+                        "AAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                    )
+                )
 
                 app = MDirApp()
                 app.left_start = root
@@ -121,6 +127,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(app.preview_enabled)
                     self.assertFalse(app.preview_mode)
                     self.assertFalse(app.right.disabled)
+                    await pilot.pause(0.2)
                     app.exit()
         finally:
             if previous is None:

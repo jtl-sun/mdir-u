@@ -317,13 +317,13 @@ class AIPanel(Vertical):
         self.set_interval(0.25, self._refresh_activity)
         self.refresh_context()
         self._append(
-            "[bold cyan]MDIR-P AI Terminal[/]\n"
+            "[bold cyan]MDIR-U AI Terminal[/]\n"
             "Codex Quick is the default provider for faster everyday replies.\n"
             "Select regular Codex when a task needs deeper reasoning.\n"
             "Commands run in the directory shown above.\n"
             "The default Codex sandbox is [bold]workspace-write[/].\n"
             "Select [bold]Codex Local[/] for an AI agent with full PC access.\n"
-            "Select [bold]PowerShell[/] to run local commands outside the Codex sandbox.\n"
+            "Select [bold]Shell[/] to run local commands outside the Codex sandbox.\n"
             "Select [bold]Ollama Cloud[/] and press Connect for cloud models.\n"
             "Select [bold]Ollama CPU[/] for Gemma 4 on low-VRAM systems.\n"
             "If auto-detection fails, set [bold]MDIR_CODEX_PATH[/] to codex.exe."
@@ -339,7 +339,7 @@ class AIPanel(Vertical):
         cwd = self.cwd_getter()
         key = self.provider_key
         session = self.sessions.get(key, "")
-        if key == "powershell":
+        if key == "shell":
             suffix = " - local shell - no Codex sandbox"
         elif key == "codex quick":
             suffix = " - low reasoning - faster response"
@@ -359,9 +359,9 @@ class AIPanel(Vertical):
         """Update prompt hints and the action button for the selected provider."""
         editor = self.query_one("#ai_prompt", AICommandEditor)
         send = self.query_one("#ai_send", Button)
-        if self.provider_key == "powershell":
+        if self.provider_key == "shell":
             editor.placeholder = (
-                "Run PowerShell here. Enter: new line / "
+                "Run shell commands here. Enter: new line / "
                 "Ctrl+Enter: run / F12: file pane"
             )
             send.label = "Run"
@@ -493,7 +493,7 @@ class AIPanel(Vertical):
         provider = PROVIDERS[self.provider_key]
         state = "ready" if provider.available() else "CLI not found on PATH"
         self._append(f"[bold cyan]{provider.name}[/]: {state}")
-        if self.provider_key == "powershell":
+        if self.provider_key == "shell":
             self._append(
                 "[yellow]Local mode: commands run directly on this PC, "
                 "outside the Codex sandbox.[/]"
@@ -501,7 +501,7 @@ class AIPanel(Vertical):
         elif self.provider_key == "codex local":
             self._append(
                 "[bold yellow]Warning: Codex Local can install software and "
-                "modify or delete files anywhere this Windows account can access.[/]"
+                "modify or delete files anywhere this Linux account can access.[/]"
             )
         elif self.provider_key == "codex quick":
             self._append(
@@ -597,8 +597,8 @@ class AIPanel(Vertical):
         """Clear the editor and start a confirmed provider request."""
         editor.text = ""
         editor.focus()
-        if key == "powershell":
-            self._append(f"\n[bold magenta]PS>[/]\n{escape(prompt)}")
+        if key == "shell":
+            self._append(f"\n[bold magenta]$[/]\n{escape(prompt)}")
         else:
             self._append(f"\n[bold green]You[/]\n{escape(prompt)}")
         self.response_heading_shown = False
@@ -672,7 +672,7 @@ class AIPanel(Vertical):
         command = provider.login_command()
         if command is None:
             hint = (
-                f"Install and authenticate the {provider.name} CLI in PowerShell, "
+                f"Install and authenticate the {provider.name} CLI in your shell, "
                 "then press Connect again."
             )
             if provider.name == "Ollama":

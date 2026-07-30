@@ -1,17 +1,14 @@
-"""Backward-compatible launcher for MDIR-P 2.15.
-
-New installations should use ``python -m mdir``.
-"""
+"""Direct launcher for MDIR-U."""
 
 from __future__ import annotations
 
 import sys
 
-from mdir.app import MDirApp, self_check
-from mdir.window import center_terminal_window
+from mdir_u.app import MDirApp, self_check
+from mdir_u.window import center_terminal_window
 
 
-MDirAI215 = MDirApp
+MDirU = MDirApp
 
 
 def main() -> int:

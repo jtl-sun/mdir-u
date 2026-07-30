@@ -15,6 +15,11 @@ from textual.timer import Timer
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from .fast_app import FastFileManagerApp, LargeDirectoryFilePane
+from .platform_support import (
+    filesystem_usage_text,
+    locations,
+    open_with_default_app,
+)
 from .preview.document import (
     DocumentPreviewPanel,
     PREVIEW_EXTENSIONS,
@@ -33,9 +38,10 @@ from .theme import (
     TOTAL_COMMANDER_THEME,
     install_file_colors,
 )
+from .ui.dialogs import CompactDriveScreen
 
 
-VERSION = "2.15"
+VERSION = "0.1"
 HOTKEY_POLL_SECONDS = 0.04
 HOTKEY_DEDUP_SECONDS = 0.22
 VK_CONTROL = 0x11
@@ -48,12 +54,12 @@ if TYPE_CHECKING:
 
 
 class MDirApp(FastFileManagerApp):
-    """Current MDIR-P application without the historical version chain."""
+    """MDIR-U for Ubuntu and other modern terminal environments."""
 
-    TITLE = f"MDIR-P {VERSION}"
+    TITLE = f"MDIR-U {VERSION}"
     SUB_TITLE = (
-        "Dual Pane File Manager / Total Commander Theme / "
-        "Safe Text F3-F4 / Stable Preview / Codex Quick"
+        "Ubuntu and Universal File Manager / AI Terminal / "
+        "Large Directories / Document Preview"
     )
     CSS = FastFileManagerApp.CSS + """
     #document_preview {
@@ -172,13 +178,17 @@ class MDirApp(FastFileManagerApp):
     def _drive_buttons(side: str):
         prefix = "l" if side == "left" else "r"
         label = side.upper()
-        for index in range(26):
-            letter = chr(ord("A") + index)
+        for key, text in (
+            ("root", "Root"),
+            ("home", "Home"),
+            ("mnt", "Mnt"),
+            ("media", "Media"),
+        ):
             yield Button(
-                letter,
-                id=f"{prefix}drive_{letter.lower()}",
+                text,
+                id=f"{prefix}location_{key}",
                 classes="drive-button",
-                tooltip=f"Switch {label} pane to {letter}:\\",
+                tooltip=f"Switch {label} pane to {text}",
             )
         yield Button(
             "Hidden",
@@ -194,11 +204,99 @@ class MDirApp(FastFileManagerApp):
     def on_mount(self) -> None:
         super().on_mount()
         self.document_preview.disabled = True
-        self._terminal_window_handle = self._active_window_handle()
-        self._hotkey_timer = self.set_interval(
-            HOTKEY_POLL_SECONDS,
-            self._poll_ctrl_f3,
-        )
+        if os.name == "nt":
+            self._terminal_window_handle = self._active_window_handle()
+            self._hotkey_timer = self.set_interval(
+                HOTKEY_POLL_SECONDS,
+                self._poll_ctrl_f3,
+            )
+        self.update_drive_bar()
+
+    def _location_for_key(self, key: str) -> Path | None:
+        mapping = {
+            "root": Path("/"),
+            "home": Path.home(),
+            "mnt": Path("/mnt"),
+            "media": Path("/media"),
+        }
+        candidate = mapping.get(key)
+        return candidate if candidate is not None and candidate.is_dir() else None
+
+    @on(Button.Pressed)
+    def location_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        for prefix, pane, side in (
+            ("llocation_", self.left, "left"),
+            ("rlocation_", self.right, "right"),
+        ):
+            if not button_id.startswith(prefix):
+                continue
+            target = self._location_for_key(button_id.removeprefix(prefix))
+            if target is None:
+                self.set_status("That location is not available.")
+            else:
+                self.set_active(side)
+                self.switch_pane_to_location(pane, target)
+            event.stop()
+            return
+
+    def switch_pane_to_location(self, pane, target: Path) -> None:
+        try:
+            target = target.expanduser().resolve()
+            if not target.is_dir():
+                raise NotADirectoryError(target)
+            pane.current_path = target
+            pane.marked.clear()
+            pane.refresh_listing()
+            pane.update_summary()
+            self._save_paths()
+            self.update_drive_bar()
+            pane.table.focus()
+            self.set_status(f"{pane.id.upper()} pane: {target}")
+        except (OSError, RuntimeError) as exc:
+            self.set_status(f"Could not open location: {exc}")
+
+    def update_drive_bar(self) -> None:
+        if os.name == "nt":
+            super().update_drive_bar()
+            return
+        for pane, prefix, info_id in (
+            (self.left, "llocation_", "#left_drive_info"),
+            (self.right, "rlocation_", "#right_drive_info"),
+        ):
+            current = pane.current_path
+            for key in ("root", "home", "mnt", "media"):
+                try:
+                    button = self.query_one(f"#{prefix}{key}", Button)
+                    target = self._location_for_key(key)
+                    button.display = target is not None
+                    button.set_class(
+                        target is not None and current == target,
+                        "current-drive",
+                    )
+                except Exception:
+                    pass
+            try:
+                self.query_one(info_id, Static).update(
+                    filesystem_usage_text(current)
+                )
+            except Exception:
+                pass
+
+    def _prompt_drive(self, pane) -> None:
+        choices = [
+            (f"{item.label}  {item.path}", str(item.path))
+            for item in locations()
+        ]
+        current = str(pane.current_path)
+
+        def selected(value: str | None) -> None:
+            if value:
+                self.switch_pane_to_location(pane, Path(value))
+            else:
+                self.set_status("Location selection cancelled.")
+
+        self.push_screen(CompactDriveScreen(choices, current), selected)
 
     @staticmethod
     def _active_window_handle() -> int:
@@ -241,6 +339,8 @@ class MDirApp(FastFileManagerApp):
             self.action_toggle_preview()
 
     def _native_preview_layout(self) -> Optional[PaneLayout]:
+        if os.name != "nt":
+            return None
         from .preview.native import PaneLayout
 
         try:
@@ -282,7 +382,11 @@ class MDirApp(FastFileManagerApp):
             return
 
         pane_layout = self._native_preview_layout()
-        shown = self.native_preview.show(path, pane_layout=pane_layout)
+        shown = (
+            self.native_preview.show(path, pane_layout=pane_layout)
+            if os.name == "nt"
+            else False
+        )
         wrap = self.query_one("#right_wrap", Vertical)
         self.preview_mode = True
         self.right.disabled = True
@@ -313,7 +417,8 @@ class MDirApp(FastFileManagerApp):
         *,
         restore_right_focus: bool = False,
     ) -> None:
-        self.native_preview.hide()
+        if self._native_preview is not None:
+            self._native_preview.hide()
         if not self.preview_mode:
             return
         self.preview_mode = False
@@ -372,7 +477,8 @@ class MDirApp(FastFileManagerApp):
     def _restore_preview_file_focus(self) -> None:
         if not self.preview_enabled or not self.preview_mode or self.ai_mode:
             return
-        self.native_preview.restore_terminal_focus()
+        if self._native_preview is not None:
+            self._native_preview.restore_terminal_focus()
         self.set_active("left")
         self.left.table.refresh()
         self.left.table.focus()
@@ -423,12 +529,8 @@ class MDirApp(FastFileManagerApp):
         if path is None:
             return
         try:
-            if os.name != "nt":
-                raise OSError("Open is currently available on Windows.")
-            os.startfile(path)
-            self.set_status(
-                f"Opened with the Windows default application: {path}"
-            )
+            open_with_default_app(path)
+            self.set_status(f"Opened with the default application: {path}")
         except Exception as exc:
             self.set_status(f"Could not open {path.name}: {exc}")
 
@@ -502,7 +604,8 @@ class MDirApp(FastFileManagerApp):
             limit=DEFAULT_VIEW_LIMIT,
         ):
             return
-        self.native_preview.hide()
+        if self._native_preview is not None:
+            self._native_preview.hide()
         super().action_view()
 
     def action_edit(self) -> None:
@@ -535,7 +638,7 @@ class MDirApp(FastFileManagerApp):
 
 def self_check() -> int:
     """Run a dependency-light structural check for the current package."""
-    print(f"MDIR-P {VERSION} package self-check")
+    print(f"MDIR-U {VERSION} package self-check")
     print(f"Default theme: {THEME_NAME}")
     print("Preview starts disabled and uses bounded background rendering")
     print("F3/F4 accept bounded text files only")
@@ -551,5 +654,5 @@ def self_check() -> int:
     if app.theme != THEME_NAME:
         print("ERROR - default theme was not installed.")
         return 1
-    print("OK - MDIR-P package is ready.")
+    print("OK - MDIR-U package is ready.")
     return 0

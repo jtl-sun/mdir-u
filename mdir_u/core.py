@@ -18,8 +18,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 
-VERSION = "1.8"
-CONFIG_PATH = Path.home() / ".mdir18.json"
+VERSION = "0.1"
+CONFIG_PATH = Path.home() / ".config" / "mdir-u" / "config.json"
 DEFAULT_COLUMN_WIDTHS = {
     "name": 52,
     "extension": 12,
@@ -1394,8 +1394,8 @@ class FilePane(Vertical):
 
 
 class MDir(App):
-    TITLE = f"MDIR-P {VERSION}"
-    SUB_TITLE = "Dual Pane File Manager / Total Commander style"
+    TITLE = f"MDIR-U {VERSION}"
+    SUB_TITLE = "Ubuntu and Universal Dual Pane File Manager"
 
     CSS = """
     Screen { background: black; }
@@ -1514,7 +1514,7 @@ class MDir(App):
         Binding("ctrl+shift+w", "reset_column_widths", "Reset widths", show=False),
         Binding("ctrl+p", "properties", "Properties", show=False),
         Binding("ctrl+g", "folder_size", "Folder size", show=False),
-        Binding("shift+f10", "powershell_here", "PowerShell", show=False),
+        Binding("shift+f10", "powershell_here", "Terminal", show=False),
         Binding("alt+f1", "drive_left", "Left drive", show=False),
         Binding("alt+f2", "drive_right", "Right drive", show=False),
     ]
@@ -1606,6 +1606,7 @@ class MDir(App):
 
     def _save_paths(self) -> None:
         try:
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             CONFIG_PATH.write_text(
                 json.dumps(
                     {
@@ -2367,9 +2368,19 @@ class MDir(App):
                     )
                 self.set_status(f"PowerShell opened at: {target}")
             else:
-                self.set_status("Shift+F10 PowerShell is intended for Windows.")
+                from .platform_support import terminal_command
+
+                command = terminal_command(target)
+                if command is None:
+                    self.set_status(
+                        "No terminal emulator found. Install "
+                        "x-terminal-emulator or gnome-terminal."
+                    )
+                    return
+                subprocess.Popen(command, cwd=target)
+                self.set_status(f"Terminal opened at: {target}")
         except Exception as exc:
-            self.set_status(f"PowerShell open failed: {exc}")
+            self.set_status(f"Terminal open failed: {exc}")
 
     def _set_sort(self, mode: str) -> None:
         self.active.set_sort(mode)

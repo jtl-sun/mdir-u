@@ -489,10 +489,9 @@ class EditablePathFilePane(BaseFilePane):
 class EditablePathApp(BaseApp):
     """AI-enabled file manager with editable paths and cached metadata."""
 
-    TITLE = "MDIR-P"
+    TITLE = "MDIR-U"
     SUB_TITLE = (
-        "Dual Pane File Manager / Codex AI / "
-        "Codex Quick / Korean IME"
+        "Ubuntu and Universal File Manager / Codex AI / Codex Quick"
     )
     CSS = BaseApp.CSS + f"""
     AIPanel Select {{

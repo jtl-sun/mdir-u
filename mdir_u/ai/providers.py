@@ -385,6 +385,45 @@ class PowerShellProvider(AIProvider):
                 )
 
 
+class ShellProvider(AIProvider):
+    """Run commands directly in the user's Ubuntu shell."""
+
+    name = "Shell"
+    executable = "bash"
+
+    def resolve_executable(self) -> Optional[str]:
+        configured = os.environ.get(self.path_environment_variable, "").strip()
+        if configured and Path(configured).expanduser().is_file():
+            return str(Path(configured).expanduser())
+        login_shell = os.environ.get("SHELL", "").strip()
+        if login_shell and Path(login_shell).is_file():
+            return login_shell
+        return (
+            shutil.which("bash")
+            or shutil.which("zsh")
+            or shutil.which("sh")
+        )
+
+    def build_command(
+        self, prompt: str, cwd: Path, session_id: Optional[str]
+    ) -> list[str]:
+        return [self.command_executable(), "-lc", prompt]
+
+    def connection_status(self) -> tuple[bool, str]:
+        executable = self.resolve_executable()
+        if executable is None:
+            return False, "No local POSIX shell was found."
+        return True, (
+            f"Local shell is ready: {executable}. "
+            "Commands run directly on this computer, outside the Codex sandbox."
+        )
+
+    def parse_line(self, line: str) -> Iterable[AIEvent]:
+        text = sanitize_terminal_output(line).rstrip("\r\n")
+        if text.strip():
+            yield AIEvent("output", text)
+
+
 class CodexLocalProvider(CodexProvider):
     """Opt-in Codex mode with direct local command execution."""
 
@@ -692,7 +731,7 @@ PROVIDERS: dict[str, AIProvider] = {
         CodexProvider(),
         CodexQuickProvider(),
         CodexLocalProvider(),
-        PowerShellProvider(),
+        ShellProvider(),
         ClaudeProvider(),
         GeminiProvider(),
         OllamaProvider(),

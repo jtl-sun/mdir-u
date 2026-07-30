@@ -9,8 +9,8 @@ from . import core as legacy
 
 
 class AIShellApp(legacy.MDir):
-    TITLE = "MDIR-P"
-    SUB_TITLE = "Dual Pane File Manager / Codex AI Terminal"
+    TITLE = "MDIR-U"
+    SUB_TITLE = "Ubuntu and Universal File Manager / Codex AI Terminal"
     CSS = legacy.MDir.CSS + """
     #ai_panel { display: none; }
     #right_wrap.ai-mode #right_drive_bar,
