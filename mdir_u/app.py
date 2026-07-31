@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import ctypes
+import inspect
 import os
+import subprocess
 import time
+import webbrowser
 from ctypes import wintypes
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -10,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, HorizontalScroll, Vertical
 from textual.timer import Timer
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
@@ -19,6 +22,7 @@ from .platform_support import (
     filesystem_usage_text,
     locations,
     open_with_default_app,
+    shell_executable,
 )
 from .preview.document import (
     DocumentPreviewPanel,
@@ -32,6 +36,14 @@ from .text_actions import (
     format_file_size,
     inspect_safe_text_file,
 )
+from .shortcuts import (
+    MAX_SHORTCUTS,
+    ShortcutDefinition,
+    expand_shortcut_text,
+    load_shortcuts,
+    save_shortcuts,
+    shortcut_config_path,
+)
 from .theme import (
     THEME_NAME,
     TOTAL_COMMANDER_CSS,
@@ -41,7 +53,7 @@ from .theme import (
 from .ui.dialogs import CompactDriveScreen
 
 
-VERSION = "0.1"
+VERSION = "2.16"
 HOTKEY_POLL_SECONDS = 0.04
 HOTKEY_DEDUP_SECONDS = 0.22
 VK_CONTROL = 0x11
@@ -57,13 +69,47 @@ class MDirApp(FastFileManagerApp):
     """MDIR-U for Ubuntu and other modern terminal environments."""
 
     TITLE = f"MDIR-U {VERSION}"
-    SUB_TITLE = (
-        "Ubuntu and Universal File Manager / AI Terminal / "
-        "Large Directories / Document Preview"
-    )
+    SUB_TITLE = "Dual Pane File Manager"
     CSS = FastFileManagerApp.CSS + """
     #document_preview {
         display: none;
+    }
+
+    #shortcut_bar {
+        width: 100%;
+        height: 2;
+        min-height: 2;
+        max-height: 2;
+        padding: 0;
+        background: $panel;
+        scrollbar-size-horizontal: 1;
+    }
+
+    #shortcut_bar Button {
+        height: 2;
+        min-height: 2;
+        min-width: 8;
+        width: auto;
+        margin: 0 1 0 0;
+        padding: 0 1;
+        border: none;
+        background: $surface;
+        color: $foreground;
+        content-align: center middle;
+    }
+
+    #shortcut_bar Button:hover {
+        background: $primary;
+        color: $text-primary;
+    }
+
+    #shortcut_edit {
+        color: $accent;
+        text-style: bold;
+    }
+
+    #shortcut_reload {
+        color: $success;
     }
 
     #right_wrap.preview-mode #right {
@@ -105,6 +151,8 @@ class MDirApp(FastFileManagerApp):
         self._hotkey_timer: Optional[Timer] = None
         self._preview_layout_timer: Optional[Timer] = None
         self._native_preview: Optional["NativePreviewController"] = None
+        self.shortcuts = load_shortcuts()
+        self.shortcut_project = Path(__file__).resolve().parent.parent
         super().__init__()
         self.register_theme(TOTAL_COMMANDER_THEME)
         self.theme = THEME_NAME
@@ -143,6 +191,33 @@ class MDirApp(FastFileManagerApp):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        with HorizontalScroll(id="shortcut_bar"):
+            yield Button(
+                "Edit Links",
+                id="shortcut_edit",
+                tooltip="Edit the MDIR-U shortcut configuration",
+            )
+            for index in range(MAX_SHORTCUTS):
+                shortcut = (
+                    self.shortcuts[index]
+                    if index < len(self.shortcuts)
+                    else None
+                )
+                yield Button(
+                    shortcut.label if shortcut else "",
+                    id=f"shortcut_{index}",
+                    classes="shortcut-button",
+                    tooltip=(
+                        self._shortcut_tooltip(shortcut)
+                        if shortcut
+                        else ""
+                    ),
+                )
+            yield Button(
+                "Reload",
+                id="shortcut_reload",
+                tooltip="Reload shortcuts after editing the JSON file",
+            )
         with Horizontal(id="panes"):
             with Vertical(id="left_wrap", classes="pane-wrap"):
                 with Horizontal(id="left_drive_bar", classes="drive-bar"):
@@ -203,6 +278,7 @@ class MDirApp(FastFileManagerApp):
 
     def on_mount(self) -> None:
         super().on_mount()
+        self._sync_shortcut_buttons()
         self.document_preview.disabled = True
         if os.name == "nt":
             self._terminal_window_handle = self._active_window_handle()
@@ -211,6 +287,178 @@ class MDirApp(FastFileManagerApp):
                 self._poll_ctrl_f3,
             )
         self.update_drive_bar()
+
+    @staticmethod
+    def _shortcut_tooltip(shortcut: ShortcutDefinition) -> str:
+        return f"{shortcut.kind.title()}: {shortcut.target}"
+
+    def _sync_shortcut_buttons(self) -> None:
+        """Update fixed shortcut slots without rebuilding the widget tree."""
+        for index in range(MAX_SHORTCUTS):
+            button = self.query_one(f"#shortcut_{index}", Button)
+            if index < len(self.shortcuts):
+                shortcut = self.shortcuts[index]
+                button.label = shortcut.label
+                button.tooltip = self._shortcut_tooltip(shortcut)
+                button.display = True
+            else:
+                button.display = False
+
+    def _expanded_shortcut_text(self, value: str) -> str:
+        return expand_shortcut_text(
+            value,
+            current=self.active.current_path,
+            left=self.left.current_path,
+            right=self.right.current_path,
+            project=self.shortcut_project,
+        )
+
+    def _shortcut_pane(self, shortcut: ShortcutDefinition):
+        if shortcut.pane == "left":
+            return self.left
+        if shortcut.pane == "right":
+            return self.right
+        return self.active
+
+    def _open_shortcut_folder(self, shortcut: ShortcutDefinition) -> None:
+        target = Path(self._expanded_shortcut_text(shortcut.target))
+        try:
+            target = target.resolve()
+            if not target.is_dir():
+                raise NotADirectoryError("directory does not exist")
+        except (OSError, RuntimeError) as exc:
+            self.set_status(f"Shortcut folder unavailable: {target} ({exc})")
+            return
+
+        pane = self._shortcut_pane(shortcut)
+        side = "left" if pane is self.left else "right"
+        self.set_active(side)
+        self.switch_pane_to_location(pane, target)
+        self.set_status(f"Shortcut: {shortcut.label} -> {target}")
+
+    def _launch_shortcut_process(
+        self,
+        shortcut: ShortcutDefinition,
+        *,
+        command: bool = False,
+    ) -> None:
+        target = self._expanded_shortcut_text(shortcut.target)
+        working_directory = str(self.active.current_path)
+        if command:
+            if os.name == "nt":
+                arguments = ["powershell.exe", "-NoExit", "-Command", target]
+            else:
+                executable = shell_executable() or "/bin/sh"
+                arguments = [executable, "-lc", target]
+        else:
+            arguments = [
+                target,
+                *(self._expanded_shortcut_text(arg) for arg in shortcut.args),
+            ]
+        process_options = (
+            {"creationflags": subprocess.CREATE_NEW_CONSOLE}
+            if os.name == "nt"
+            else {"start_new_session": True}
+        )
+        subprocess.Popen(
+            arguments,
+            cwd=working_directory,
+            **process_options,
+        )
+        self.set_status(f"Launched shortcut: {shortcut.label}")
+
+    async def _run_shortcut_action(self, shortcut: ShortcutDefinition) -> None:
+        allowed_actions = {
+            "toggle_ai_terminal",
+            "toggle_preview",
+            "search",
+            "powershell_here",
+            "refresh_all",
+            "hidden_system",
+        }
+        if shortcut.target not in allowed_actions:
+            raise ValueError(f"unsupported action: {shortcut.target}")
+        method = getattr(self, f"action_{shortcut.target}")
+        result = method()
+        if inspect.isawaitable(result):
+            await result
+
+    async def _activate_shortcut(self, shortcut: ShortcutDefinition) -> None:
+        try:
+            if shortcut.kind == "folder":
+                self._open_shortcut_folder(shortcut)
+            elif shortcut.kind == "file":
+                target = Path(self._expanded_shortcut_text(shortcut.target))
+                if not target.is_file():
+                    raise FileNotFoundError(target)
+                open_with_default_app(target)
+                self.set_status(f"Opened shortcut: {shortcut.label}")
+            elif shortcut.kind == "program":
+                self._launch_shortcut_process(shortcut)
+            elif shortcut.kind == "command":
+                self._launch_shortcut_process(shortcut, command=True)
+            elif shortcut.kind == "web":
+                target = self._expanded_shortcut_text(shortcut.target)
+                if not webbrowser.open(target, new=2):
+                    raise OSError("the default browser did not accept the URL")
+                self.set_status(f"Opened website: {shortcut.label}")
+            elif shortcut.kind == "action":
+                await self._run_shortcut_action(shortcut)
+        except Exception as exc:
+            self.set_status(f"Shortcut failed: {shortcut.label} ({exc})")
+
+    @on(Button.Pressed, "#shortcut_bar Button")
+    async def shortcut_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        event.stop()
+
+        if button_id == "shortcut_edit":
+            from .ui.shortcuts import ShortcutManagerScreen
+
+            def links_edited(
+                shortcuts: Optional[list[ShortcutDefinition]],
+            ) -> None:
+                if shortcuts is None:
+                    self.set_status("Link editing cancelled.")
+                    self.set_active(self.active_side)
+                    return
+                try:
+                    config_path = save_shortcuts(shortcuts)
+                    self.shortcuts = shortcuts
+                    self._sync_shortcut_buttons()
+                    self.set_status(
+                        f"Saved {len(shortcuts)} link(s): {config_path}"
+                    )
+                except Exception as exc:
+                    self.set_status(f"Could not save links: {exc}")
+                self.set_active(self.active_side)
+
+            self.push_screen(
+                ShortcutManagerScreen(
+                    self.shortcuts,
+                    self.active.current_path,
+                ),
+                links_edited,
+            )
+            return
+
+        if button_id == "shortcut_reload":
+            self.shortcuts = load_shortcuts()
+            self._sync_shortcut_buttons()
+            self.set_status(
+                f"Reloaded {len(self.shortcuts)} shortcut(s) from "
+                f"{shortcut_config_path()}"
+            )
+            return
+
+        if not button_id.startswith("shortcut_"):
+            return
+        try:
+            index = int(button_id.removeprefix("shortcut_"))
+            shortcut = self.shortcuts[index]
+        except (ValueError, IndexError):
+            return
+        await self._activate_shortcut(shortcut)
 
     def _location_for_key(self, key: str) -> Path | None:
         mapping = {
@@ -643,6 +891,7 @@ def self_check() -> int:
     print("Preview starts disabled and uses bounded background rendering")
     print("F3/F4 accept bounded text files only")
     print("Large directories use cached metadata and batched row insertion")
+    print(f"Top shortcut bar supports up to {MAX_SHORTCUTS} user links")
     required = {".jpg", ".png", ".pdf", ".xlsx", ".xls"}
     if not required.issubset(PREVIEW_EXTENSIONS):
         print("ERROR - required Preview formats are missing.")

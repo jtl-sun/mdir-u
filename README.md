@@ -20,6 +20,7 @@ file manager from the DOS era.
 - Direct local Bash/Shell commands outside the Codex sandbox
 - Ubuntu locations and mounted filesystem selection
 - Total Commander-inspired dark theme
+- Configurable top shortcut bar with an in-app Link Manager
 - English UI with Unicode filename support
 
 Preview is disabled at startup. Press `Ctrl+F3` to show or hide it.
@@ -28,7 +29,7 @@ Preview is disabled at startup. Press `Ctrl+F3` to show or hide it.
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip xdg-utils poppler-utils
+sudo apt install -y python3 python3-venv python3-pip xdg-utils poppler-utils zenity
 
 git clone https://github.com/jtl-sun/mdir-u.git
 cd mdir-u
@@ -75,6 +76,27 @@ python3 -m mdir_u
 | `Ctrl+F3` | Toggle document preview |
 | `Ctrl+H` | Toggle hidden files |
 | `Shift+F10` | Open a terminal at the selected directory |
+
+## Top Shortcut Bar
+
+The shortcut bar sits below the title line and can open folders in a chosen
+pane, launch files or programs, open websites, run shell commands, or trigger
+selected MDIR-U actions.
+
+Click **Edit Links** to open the built-in Link Manager. You can edit names,
+types, targets, panes, and arguments; add or remove links; change their order;
+and browse for files or folders. **Save** updates the bar immediately.
+
+MDIR-U stores the links in:
+
+```text
+~/.mdir-u-shortcuts.json
+```
+
+The optional Browse buttons use `zenity` or `kdialog` on Linux. The supported
+link types are `folder`, `file`, `program`, `web`, `command`, and `action`.
+Placeholders include `{home}`, `{project}`, `{current}`, `{left}`, and
+`{right}`.
 
 ## AI and local shell
 

@@ -2,7 +2,7 @@
 set -eu
 
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip xdg-utils poppler-utils
+sudo apt install -y python3 python3-venv python3-pip xdg-utils poppler-utils zenity
 
 python3 -m venv .venv
 . .venv/bin/activate
