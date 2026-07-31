@@ -18,7 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 
-VERSION = "0.1"
+VERSION = "2.16"
 CONFIG_PATH = Path.home() / ".config" / "mdir-u" / "config.json"
 DEFAULT_COLUMN_WIDTHS = {
     "name": 52,
