@@ -74,7 +74,7 @@ python3 -m mdir_u
 | `Ctrl+F2` | Batch rename selected items |
 | `Ctrl+F2` | Batch rename selected items |
 | `F3` | View a supported text file |
-| `F4` | Edit a supported text file |
+| `F4` | Edit a supported text file with nano |
 | `F5` | Copy |
 | `F6` | Move |
 | `Alt+F5` | Compress selected items to ZIP |
@@ -99,6 +99,14 @@ choose **Cancel** to stop after the current top-level item.
 Batch Rename supports `[N]`, `[E]`, `[C]`, `[YMD]`, and `[hms]` tokens as well
 as find/replace and regular expressions. ZIP creation and extraction run in
 the background, preserve directory trees, and reject unsafe archive paths.
+
+`F4` temporarily suspends the mDir interface and opens the selected supported
+text file in `nano`. When nano exits, mDir restores the file panels. If nano is
+not installed, mDir displays the Ubuntu installation command:
+
+```bash
+sudo apt update && sudo apt install nano
+```
 | `Alt+Enter` | Show item properties |
 
 Copy, Move, and permanent Delete run in a background worker. Large batches
