@@ -18,8 +18,12 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 
-VERSION = "2.16"
+from . import __version__
+
+
+VERSION = __version__
 CONFIG_PATH = Path.home() / ".config" / "mdir-u" / "config.json"
+LEGACY_CONFIG_PATH = Path.home() / ".mdir-u.json"
 DEFAULT_COLUMN_WIDTHS = {
     "name": 52,
     "extension": 12,
@@ -42,6 +46,7 @@ COLUMN_HARD_MIN_WIDTHS = {
 }
 
 COLUMN_ORDER = ("name", "extension", "size", "modified")
+EXTENSION_GAP = "   "
 
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"
@@ -54,6 +59,30 @@ TEXT_EXTENSIONS = {
 }
 
 PARENT_DIRECTORY_STYLE = "bold cyan"
+
+
+def load_config_data() -> dict[str, object]:
+    """Read current settings, falling back to the pre-2.17 filename."""
+    path = CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def display_file_title(path: Path, *, is_directory: bool | None = None) -> str:
+    """Return the filename without its final extension for the Name column."""
+    directory = path.is_dir() if is_directory is None else is_directory
+    if directory or not path.suffix:
+        return path.name
+    return path.name[: -len(path.suffix)]
+
+
+def display_extension(extension: str) -> str:
+    """Indent extensions so filenames and extensions remain visually distinct."""
+    normalized = extension.lstrip(".")
+    return f"{EXTENSION_GAP}{normalized}" if normalized else ""
 
 
 def human_size(size: int) -> str:
@@ -81,7 +110,7 @@ def file_name_text(path: Path, marked: bool = False) -> Text:
     - Marked items: yellow
     """
     prefix = "* " if marked else "  "
-    text = Text(prefix + path.name)
+    text = Text(prefix + display_file_title(path))
 
     if marked:
         text.stylize("bold bright_yellow")
@@ -576,6 +605,9 @@ class MDirDataTable(DataTable):
 
         self._right_dragging = False
         self._drag_rows_seen: set[int] = set()
+        self._right_drag_last_row: Optional[int] = None
+        self._right_drag_scroll_direction = 0
+        self._right_drag_scroll_timer = None
 
         self._resize_key: Optional[str] = None
         self._resize_next_key: Optional[str] = None
@@ -594,6 +626,16 @@ class MDirDataTable(DataTable):
             pass
         return None
 
+    def _event_row(self, event: events.MouseEvent) -> Optional[int]:
+        """Resolve the row attached to this event before using hover fallback."""
+        try:
+            row = int(event.style.meta.get("row", -1))
+            if 0 <= row < self.row_count:
+                return row
+        except Exception:
+            pass
+        return self._hover_row()
+
     def _pane(self):
         parent = self.parent
         return parent if isinstance(parent, FilePane) else None
@@ -611,6 +653,9 @@ class MDirDataTable(DataTable):
 
     def _toggle_hovered_row(self) -> None:
         row = self._hover_row()
+        self._toggle_row(row)
+
+    def _toggle_row(self, row: Optional[int]) -> None:
         pane = self._pane()
         if row is None or pane is None:
             return
@@ -622,6 +667,84 @@ class MDirDataTable(DataTable):
             path = pane.entries[row]
             if path is not None:
                 pane.toggle_mark_path(path)
+
+    def _toggle_drag_range_to(self, row: int) -> None:
+        """Toggle every crossed row, even when fast mouse motion skips events."""
+        if self._right_drag_last_row is None:
+            candidates = (row,)
+        else:
+            step = 1 if row >= self._right_drag_last_row else -1
+            candidates = range(self._right_drag_last_row + step, row + step, step)
+
+        for candidate in candidates:
+            if candidate in self._drag_rows_seen:
+                continue
+            self._drag_rows_seen.add(candidate)
+            self._toggle_row(candidate)
+        self._right_drag_last_row = row
+
+    def _set_right_drag_auto_scroll(self, direction: int) -> None:
+        """Start or pause edge scrolling while a right-button drag is active."""
+        direction = -1 if direction < 0 else 1 if direction > 0 else 0
+        self._right_drag_scroll_direction = direction
+
+        timer = self._right_drag_scroll_timer
+        if not self._right_dragging or direction == 0:
+            if timer is not None:
+                timer.pause()
+            return
+
+        if timer is None:
+            self._right_drag_scroll_timer = self.set_interval(
+                0.055,
+                self._right_drag_auto_scroll_tick,
+            )
+        else:
+            timer.resume()
+
+    def _update_right_drag_auto_scroll(self, mouse_y: int) -> None:
+        """Enable scrolling when the captured pointer reaches either edge."""
+        height = max(1, int(self.size.height))
+        top_edge = max(1, int(self.header_height))
+        bottom_edge = max(top_edge + 1, height - 2)
+
+        if mouse_y <= top_edge:
+            self._set_right_drag_auto_scroll(-1)
+        elif mouse_y >= bottom_edge:
+            self._set_right_drag_auto_scroll(1)
+        else:
+            self._set_right_drag_auto_scroll(0)
+
+    def _right_drag_auto_scroll_tick(self) -> None:
+        """Advance one row and keep selection continuous across pages."""
+        direction = self._right_drag_scroll_direction
+        if not self._right_dragging or direction == 0 or self.row_count <= 0:
+            self._set_right_drag_auto_scroll(0)
+            return
+
+        current = self._right_drag_last_row
+        if current is None:
+            try:
+                current = int(self.cursor_row)
+            except Exception:
+                current = 0 if direction > 0 else self.row_count - 1
+
+        target = max(0, min(self.row_count - 1, current + direction))
+        if target == current:
+            self._set_right_drag_auto_scroll(0)
+            return
+
+        self._toggle_drag_range_to(target)
+        self.move_cursor(row=target, column=0, animate=False, scroll=True)
+
+    def end_right_drag(self) -> None:
+        """Clear right-drag state and stop any pending edge scroll."""
+        self._right_dragging = False
+        self._right_drag_scroll_direction = 0
+        if self._right_drag_scroll_timer is not None:
+            self._right_drag_scroll_timer.pause()
+        self._drag_rows_seen.clear()
+        self._right_drag_last_row = None
 
     def _render_boundaries(self) -> list[tuple[str, int]]:
         """Return actual rendered right-edge x positions for all columns.
@@ -672,6 +795,15 @@ class MDirDataTable(DataTable):
 
     async def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1:
+            if bool(getattr(event, "shift", False)):
+                row = self._event_row(event)
+                pane = self._pane()
+                if row is not None and pane is not None:
+                    self._activate_pane()
+                    pane.select_range_to(row)
+                    event.stop()
+                    return
+
             key = self._header_resize_hit(event.x, event.y)
             if key is not None:
                 pane = self._pane()
@@ -722,16 +854,17 @@ class MDirDataTable(DataTable):
         if event.button == 3:
             self._right_dragging = True
             self._drag_rows_seen.clear()
+            self._right_drag_last_row = None
+            self._set_right_drag_auto_scroll(0)
 
             try:
                 self.capture_mouse()
             except Exception:
                 pass
 
-            row = self._hover_row()
+            row = self._event_row(event)
             if row is not None:
-                self._drag_rows_seen.add(row)
-                self._toggle_hovered_row()
+                self._toggle_drag_range_to(row)
 
             event.stop()
 
@@ -792,12 +925,13 @@ class MDirDataTable(DataTable):
         if not self._right_dragging:
             return
 
-        row = self._hover_row()
-        if row is None or row in self._drag_rows_seen:
+        self._update_right_drag_auto_scroll(event.y)
+        row = self._event_row(event)
+        if row is None:
+            event.stop()
             return
 
-        self._drag_rows_seen.add(row)
-        self._toggle_hovered_row()
+        self._toggle_drag_range_to(row)
         event.stop()
 
     async def on_mouse_up(self, event: events.MouseUp) -> None:
@@ -829,8 +963,7 @@ class MDirDataTable(DataTable):
             return
 
         if self._right_dragging and event.button == 3:
-            self._right_dragging = False
-            self._drag_rows_seen.clear()
+            self.end_right_drag()
             try:
                 self.release_mouse()
             except Exception:
@@ -858,6 +991,10 @@ class MDirDataTable(DataTable):
 
     async def on_click(self, event: events.Click) -> None:
         if event.button == 3:
+            event.stop()
+            return
+
+        if event.button == 1 and bool(getattr(event, "shift", False)):
             event.stop()
             return
 
@@ -1039,7 +1176,10 @@ class FilePane(Vertical):
             key="name",
         )
         table.add_column(
-            self._header_label("Extension", widths["extension"]),
+            self._header_label(
+                EXTENSION_GAP + "Extension",
+                widths["extension"],
+            ),
             width=widths["extension"],
             key="extension",
         )
@@ -1178,7 +1318,11 @@ class FilePane(Vertical):
             try:
                 stat = path.stat()
                 name = file_name_text(path, path in self.marked)
-                extension = "" if path.is_dir() else (path.suffix.lower().lstrip(".") or "")
+                extension = (
+                    ""
+                    if path.is_dir()
+                    else display_extension(path.suffix.lower())
+                )
                 size = "<DIR>" if path.is_dir() else human_size(stat.st_size)
                 self.table.add_row(name, extension, size, fmt_time(stat.st_mtime))
                 self.entries.append(path)
@@ -1271,6 +1415,20 @@ class FilePane(Vertical):
             0,
             min(self.table.row_count - 1, current_row + delta),
         )
+
+        self.select_range_to(target_row)
+
+    def select_range_to(self, target_row: int) -> None:
+        """Select from the keyboard/mouse anchor through an explicit row."""
+        if self.table.row_count <= 0:
+            return
+
+        current_row = max(0, self.table.cursor_row)
+        if self.shift_anchor_row is None:
+            self.shift_anchor_row = current_row
+            self.shift_base_marked = set(self.marked)
+
+        target_row = max(0, min(self.table.row_count - 1, target_row))
 
         # Build a range between anchor and target, skipping the synthetic "..".
         lo = min(self.shift_anchor_row, target_row)
@@ -1394,6 +1552,9 @@ class FilePane(Vertical):
 
 
 class MDir(App):
+    PROMPT_SCREEN = PromptScreen
+    CONFIRM_SCREEN = ConfirmScreen
+    VIEWER_SCREEN = ViewerScreen
     TITLE = f"MDIR-U {VERSION}"
     SUB_TITLE = "Ubuntu and Universal Dual Pane File Manager"
 
@@ -1492,11 +1653,18 @@ class MDir(App):
         Binding("space", "mark", "Mark"),
         Binding("shift+up", "shift_select_up", "Select Up", show=False, priority=True),
         Binding("shift+down", "shift_select_down", "Select Down", show=False, priority=True),
+        Binding("shift+home", "shift_select_home", "Select to Top", show=False, priority=True),
+        Binding("shift+end", "shift_select_end", "Select to Bottom", show=False, priority=True),
+        Binding("shift+pageup", "shift_select_page_up", "Select Page Up", show=False, priority=True),
+        Binding("shift+pagedown", "shift_select_page_down", "Select Page Down", show=False, priority=True),
         Binding("f2", "rename", "Rename"),
+        Binding("ctrl+f2", "batch_rename", "Batch Rename", show=False),
         Binding("f3", "view", "View"),
         Binding("f4", "edit", "Edit"),
         Binding("f5", "copy", "Copy"),
         Binding("f6", "move", "Move"),
+        Binding("alt+f5", "compress_zip", "ZIP", show=False),
+        Binding("alt+f6", "extract_zip", "Unzip", show=False),
         Binding("f7", "mkdir", "MkDir"),
         Binding("f8", "delete", "Delete"),
         Binding("delete", "delete", "Delete", show=False),
@@ -1512,7 +1680,9 @@ class MDir(App):
         Binding("ctrl+h", "hidden_system", "Hidden/System", show=False),
         Binding("ctrl+w", "column_widths", "Column widths", show=False),
         Binding("ctrl+shift+w", "reset_column_widths", "Reset widths", show=False),
-        Binding("ctrl+p", "properties", "Properties", show=False),
+        # Ctrl+P belongs to Textual's command palette.  Keeping Properties on
+        # Alt+Enter avoids shadowing that built-in application command.
+        Binding("alt+enter", "properties", "Properties", show=False),
         Binding("ctrl+g", "folder_size", "Folder size", show=False),
         Binding("shift+f10", "powershell_here", "Terminal", show=False),
         Binding("alt+f1", "drive_left", "Left drive", show=False),
@@ -1542,7 +1712,7 @@ class MDir(App):
     def _load_saved_paths(self, start: Path) -> tuple[Path, Path]:
         default_right = self._default_other_path(start)
         try:
-            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            data = load_config_data()
             left = Path(data.get("left", str(start)))
             right = Path(data.get("right", str(default_right)))
             if not left.exists():
@@ -1558,10 +1728,7 @@ class MDir(App):
         widths = dict(DEFAULT_COLUMN_WIDTHS)
 
         try:
-            if not CONFIG_PATH.exists():
-                return widths
-
-            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            data = load_config_data()
             saved = data.get("column_widths", {})
 
             if not isinstance(saved, dict):
@@ -1595,10 +1762,7 @@ class MDir(App):
         A missing, old, or invalid config file must never prevent startup.
         """
         try:
-            if not CONFIG_PATH.exists():
-                return False
-
-            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            data = load_config_data()
             return bool(data.get("show_hidden_system", False))
 
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
@@ -2051,6 +2215,18 @@ class MDir(App):
     def action_shift_select_down(self) -> None:
         self.active.shift_select(1)
 
+    def action_shift_select_home(self) -> None:
+        self.active.select_range_to(0)
+
+    def action_shift_select_end(self) -> None:
+        self.active.select_range_to(self.active.table.row_count - 1)
+
+    def action_shift_select_page_up(self) -> None:
+        self.active.shift_select(-max(1, self.active.table.size.height - 2))
+
+    def action_shift_select_page_down(self) -> None:
+        self.active.shift_select(max(1, self.active.table.size.height - 2))
+
     def action_mark(self) -> None:
         self.active.toggle_mark()
 
@@ -2082,14 +2258,14 @@ class MDir(App):
             except Exception as exc:
                 self.set_status(f"Rename failed: {exc}")
 
-        self.push_screen(PromptScreen("Rename:", path.name), got_name)
+        self.push_screen(self.PROMPT_SCREEN("Rename:", path.name), got_name)
 
     def action_view(self) -> None:
         path = self.active.selected_path()
         if not path or path.is_dir():
             self.set_status("F3 View works on files.")
             return
-        self.push_screen(ViewerScreen(path))
+        self.push_screen(self.VIEWER_SCREEN(path))
 
     def action_edit(self) -> None:
         path = self.active.selected_path()
@@ -2145,7 +2321,7 @@ class MDir(App):
                 self.set_status(f"Copied {len(items)} item(s) to {destination}")
 
         self.push_screen(
-            ConfirmScreen(f"Copy {names}\nTO:\n{destination} ?"),
+            self.CONFIRM_SCREEN(f"Copy {names}\nTO:\n{destination} ?"),
             confirmed,
         )
 
@@ -2184,7 +2360,7 @@ class MDir(App):
                 self.set_status(f"Moved {len(items)} item(s) to {destination}")
 
         self.push_screen(
-            ConfirmScreen(f"Move {names}\nTO:\n{destination} ?"),
+            self.CONFIRM_SCREEN(f"Move {names}\nTO:\n{destination} ?"),
             confirmed,
         )
 
@@ -2201,7 +2377,7 @@ class MDir(App):
             except Exception as exc:
                 self.set_status(f"MkDir failed: {exc}")
 
-        self.push_screen(PromptScreen("New directory name:"), got_name)
+        self.push_screen(self.PROMPT_SCREEN("New directory name:"), got_name)
 
     def action_delete(self) -> None:
         items = self.active.selected_items()
@@ -2238,7 +2414,7 @@ class MDir(App):
                 self.set_status(f"Deleted {len(items)} item(s).")
 
         self.push_screen(
-            ConfirmScreen(
+            self.CONFIRM_SCREEN(
                 "PERMANENT DELETE - cannot be undone:\n"
                 f"{names}"
             ),
@@ -2276,7 +2452,10 @@ class MDir(App):
 
             self.switch_pane_to_drive(pane, value)
 
-        self.push_screen(PromptScreen("Drive (example C: or D:):", initial), got_drive)
+        self.push_screen(
+            self.PROMPT_SCREEN("Drive (example C: or D:):", initial),
+            got_drive,
+        )
 
     def action_search(self) -> None:
         def got_query(query: Optional[str]) -> None:
@@ -2287,7 +2466,7 @@ class MDir(App):
             else:
                 self.set_status(f"Not found: {query}")
 
-        self.push_screen(PromptScreen("Find file/directory:"), got_query)
+        self.push_screen(self.PROMPT_SCREEN("Find file/directory:"), got_query)
 
     def apply_column_widths(
         self,

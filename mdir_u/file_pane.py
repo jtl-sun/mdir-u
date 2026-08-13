@@ -15,6 +15,7 @@ from textual.widgets import Input, Static
 
 from .base import BaseApp
 from . import core as legacy
+from .ui.rename import SlowRenameDataTable
 
 
 AI_SELECTOR_WIDTH = 30
@@ -76,7 +77,7 @@ class EditablePathFilePane(BaseFilePane):
             id=f"{self.id}_path",
             classes="pane_path",
         )
-        table = legacy.MDirDataTable(cursor_type="row", zebra_stripes=False)
+        table = SlowRenameDataTable(cursor_type="row", zebra_stripes=False)
         self._add_columns(table)
         yield table
         yield Static("", classes="pane_info")
@@ -86,7 +87,13 @@ class EditablePathFilePane(BaseFilePane):
     def _name_text(entry: CachedEntry, marked: bool) -> Text:
         """Render a cached entry name without another filesystem query."""
         prefix = "* " if marked else "  "
-        text = Text(prefix + entry.path.name)
+        text = Text(
+            prefix
+            + legacy.display_file_title(
+                entry.path,
+                is_directory=entry.is_directory,
+            )
+        )
         if marked:
             text.stylize("bold bright_yellow")
         elif entry.is_directory:
@@ -236,7 +243,7 @@ class EditablePathFilePane(BaseFilePane):
                     (
                         ""
                         if entry.is_directory
-                        else entry.path.suffix.lower().lstrip(".")
+                        else legacy.display_extension(entry.path.suffix.lower())
                     ),
                     (
                         "<DIR>"
@@ -370,6 +377,18 @@ class EditablePathFilePane(BaseFilePane):
             0,
             min(self.table.row_count - 1, current_row + delta),
         )
+        self.select_range_to(target_row)
+
+    def select_range_to(self, target_row: int) -> None:
+        """Select through a mouse/keyboard endpoint and repaint changed rows."""
+        if self.table.row_count <= 0:
+            return
+        current_row = max(0, self.table.cursor_row)
+        if self.shift_anchor_row is None:
+            self.shift_anchor_row = current_row
+            self.shift_base_marked = set(self.marked)
+
+        target_row = max(0, min(self.table.row_count - 1, target_row))
         lo = min(self.shift_anchor_row, target_row)
         hi = max(self.shift_anchor_row, target_row)
         range_paths = {
@@ -387,30 +406,22 @@ class EditablePathFilePane(BaseFilePane):
         self.update_summary()
 
     def update_info(self) -> None:
-        """Update the detail box from cached metadata."""
+        """Update the always-visible three-line item detail box."""
         box = self.query_one(".pane_info", Static)
         path = self.selected_path()
-        marked_count = len(self.marked)
         if self.selected_is_parent():
             box.update(
                 f"Name: ..    Type: Parent directory\n"
                 f"Path: {self.current_path.parent}\n"
-                f"Current: {self.current_path}\n"
-                f"Marked: {marked_count}"
+                f"Current: {self.current_path}"
             )
             return
         if path is None:
-            box.update(
-                f"Current: {self.current_path}\n\n\n"
-                f"Marked: {marked_count}"
-            )
+            box.update(f"Current: {self.current_path}\n\n")
             return
         entry = self.metadata_by_path.get(path)
         if entry is None:
-            box.update(
-                f"Name: {path.name}\nPath: {path}\n\n"
-                f"Marked: {marked_count}"
-            )
+            box.update(f"Name: {path.name}\nPath: {path}\n")
             return
         kind = (
             "DIR"
@@ -426,8 +437,7 @@ class EditablePathFilePane(BaseFilePane):
             f"Name: {path.name}\n"
             f"Type: {kind}    Size: {size}    "
             f"Modified: {legacy.fmt_time(entry.modified)}\n"
-            f"Path: {path}\n"
-            f"Marked: {marked_count}"
+            f"Path: {path}"
         )
 
     def _restore_path_and_focus_table(self) -> None:
@@ -489,9 +499,10 @@ class EditablePathFilePane(BaseFilePane):
 class EditablePathApp(BaseApp):
     """AI-enabled file manager with editable paths and cached metadata."""
 
-    TITLE = "MDIR-U"
+    TITLE = "MDIR-P"
     SUB_TITLE = (
-        "Ubuntu and Universal File Manager / Codex AI / Codex Quick"
+        "Dual Pane File Manager / Codex AI / "
+        "Codex Quick / Korean IME"
     )
     CSS = BaseApp.CSS + f"""
     AIPanel Select {{

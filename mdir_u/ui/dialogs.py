@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 from typing import Optional, Sequence
 
 from rich.cells import cell_len
@@ -9,7 +10,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Button, Input, Label, ProgressBar, Select, Static
 
 
 class CompactConfirmScreen(ModalScreen[bool]):
@@ -89,7 +90,7 @@ class CompactConfirmScreen(ModalScreen[bool]):
         self.preferred_width = max(
             72,
             longest + 8,
-            cell_len("Y: Yes   N/Esc/X: Cancel") + 6,
+            cell_len("Enter/Y: Yes   N/Esc/X: Cancel") + 6,
         )
         self.preferred_height = max(9, min(20, len(lines) + 7))
 
@@ -102,7 +103,9 @@ class CompactConfirmScreen(ModalScreen[bool]):
             with Horizontal(id="confirm_actions"):
                 yield Button("Yes", id="confirm_yes", variant="error")
                 yield Button("Cancel", id="confirm_cancel")
-            yield Static("Y: Yes   N/Esc/X: Cancel", id="confirm_help")
+            yield Static(
+                "Enter/Y: Yes   N/Esc/X: Cancel", id="confirm_help"
+            )
 
     def on_mount(self) -> None:
         dialog = self.query_one("#confirm_dialog", Vertical)
@@ -114,7 +117,11 @@ class CompactConfirmScreen(ModalScreen[bool]):
             self.preferred_height,
             max(9, self.size.height - 4),
         )
-        self.query_one("#confirm_cancel", Button).focus()
+        # File operations are opened only after the user explicitly requests
+        # them.  Make Enter confirm that pending operation.  Previously the
+        # Cancel button received initial focus, so Enter silently cancelled
+        # Move/Delete and made the commands appear broken.
+        self.query_one("#confirm_yes", Button).focus()
 
     def _accept(self) -> None:
         self.dismiss(True)
@@ -141,6 +148,106 @@ class CompactConfirmScreen(ModalScreen[bool]):
 
     def key_escape(self) -> None:
         self._cancel()
+
+
+class FileOperationProgressScreen(ModalScreen[None]):
+    """Responsive progress window for long copy, move, and delete batches."""
+
+    CSS = """
+    FileOperationProgressScreen {
+        align: center middle;
+        background: #00000073;
+    }
+
+    #file_operation_dialog {
+        width: 72;
+        max-width: 94%;
+        height: 12;
+        border: solid $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #file_operation_title {
+        height: 1;
+        color: $foreground;
+        text-style: bold;
+    }
+
+    #file_operation_item {
+        height: 1;
+        margin-top: 1;
+        color: #bbbbbb;
+        text-overflow: ellipsis;
+        text-wrap: nowrap;
+    }
+
+    #file_operation_progress {
+        margin-top: 1;
+    }
+
+    #file_operation_actions {
+        height: 3;
+        margin-top: 1;
+        align-horizontal: right;
+    }
+
+    #file_operation_cancel {
+        min-width: 12;
+        height: 3;
+    }
+    """
+
+    def __init__(self, operation: str, total: int, cancel_event: Event) -> None:
+        super().__init__()
+        self.operation = operation.title()
+        self.total = total
+        self.cancel_event = cancel_event
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="file_operation_dialog"):
+            yield Label(
+                f"{self.operation}: 0 / {self.total}",
+                id="file_operation_title",
+            )
+            yield Static("Preparing...", id="file_operation_item")
+            yield ProgressBar(
+                total=max(1, self.total),
+                show_eta=True,
+                id="file_operation_progress",
+            )
+            with Horizontal(id="file_operation_actions"):
+                yield Button("Cancel", id="file_operation_cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#file_operation_cancel", Button).focus()
+
+    def update_progress(self, completed: int, item_name: str) -> None:
+        self.query_one("#file_operation_title", Label).update(
+            f"{self.operation}: {completed:,} / {self.total:,}"
+        )
+        self.query_one("#file_operation_item", Static).update(item_name)
+        self.query_one("#file_operation_progress", ProgressBar).update(
+            progress=completed,
+            total=max(1, self.total),
+        )
+
+    def request_cancel(self) -> None:
+        self.cancel_event.set()
+        self.query_one("#file_operation_item", Static).update(
+            "Cancelling after the current item..."
+        )
+        button = self.query_one("#file_operation_cancel", Button)
+        button.disabled = True
+        button.label = "Cancelling..."
+
+    @on(Button.Pressed, "#file_operation_cancel")
+    def cancel_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.request_cancel()
+
+    def key_escape(self) -> None:
+        self.request_cancel()
 
 
 @dataclass(frozen=True)

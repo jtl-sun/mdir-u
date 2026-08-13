@@ -21,6 +21,14 @@ file manager from the DOS era.
 - Ubuntu locations and mounted filesystem selection
 - Total Commander-inspired dark theme
 - Configurable top shortcut bar with an in-app Link Manager
+- Responsive background Copy, Move, and Delete with progress and cancellation
+- Advanced filename and content search with live results
+- Safe batch rename with tokens, counters, and rollback
+- Built-in ZIP creation and secure ZIP extraction
+- Responsive background Copy, Move, and Delete with progress and cancellation
+- Advanced filename and content search with live results
+- Safe batch rename with tokens, counters, and rollback
+- Built-in ZIP creation and secure ZIP extraction
 - English UI with Unicode filename support
 
 Preview is disabled at startup. Press `Ctrl+F3` to show or hide it.
@@ -63,10 +71,16 @@ python3 -m mdir_u
 | `Backspace` | Parent directory |
 | `Space` | Mark or unmark |
 | `F2` | Rename |
+| `Ctrl+F2` | Batch rename selected items |
+| `Ctrl+F2` | Batch rename selected items |
 | `F3` | View a supported text file |
 | `F4` | Edit a supported text file |
 | `F5` | Copy |
 | `F6` | Move |
+| `Alt+F5` | Compress selected items to ZIP |
+| `Alt+F6` | Extract the selected ZIP |
+| `Alt+F5` | Compress selected items to ZIP |
+| `Alt+F6` | Extract the selected ZIP |
 | `F7` | Create directory |
 | `F8` | Delete |
 | `F9` | Select a location or mount |
@@ -76,6 +90,24 @@ python3 -m mdir_u
 | `Ctrl+F3` | Toggle document preview |
 | `Ctrl+H` | Toggle hidden files |
 | `Shift+F10` | Open a terminal at the selected directory |
+| `Alt+Enter` | Show item properties |
+
+Copy, Move, and permanent Delete run in a background worker. Large batches
+show completed and total counts, the current item, and an ETA; press `Esc` or
+choose **Cancel** to stop after the current top-level item.
+
+Batch Rename supports `[N]`, `[E]`, `[C]`, `[YMD]`, and `[hms]` tokens as well
+as find/replace and regular expressions. ZIP creation and extraction run in
+the background, preserve directory trees, and reject unsafe archive paths.
+| `Alt+Enter` | Show item properties |
+
+Copy, Move, and permanent Delete run in a background worker. Large batches
+show completed and total counts, the current item, and an ETA; press `Esc` or
+choose **Cancel** to stop after the current top-level item.
+
+Batch Rename supports `[N]`, `[E]`, `[C]`, `[YMD]`, and `[hms]` tokens as well
+as find/replace and regular expressions. ZIP creation and extraction run in
+the background, preserve directory trees, and reject unsafe archive paths.
 
 ## Top Shortcut Bar
 

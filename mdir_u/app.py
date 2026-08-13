@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ctypes
 import inspect
@@ -18,6 +18,7 @@ from textual.timer import Timer
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from .fast_app import FastFileManagerApp, LargeDirectoryFilePane
+from . import __version__
 from .platform_support import (
     filesystem_usage_text,
     locations,
@@ -53,7 +54,7 @@ from .theme import (
 from .ui.dialogs import CompactDriveScreen
 
 
-VERSION = "2.16"
+VERSION = __version__
 HOTKEY_POLL_SECONDS = 0.04
 HOTKEY_DEDUP_SECONDS = 0.22
 VK_CONTROL = 0x11
@@ -891,6 +892,7 @@ def self_check() -> int:
     print("Preview starts disabled and uses bounded background rendering")
     print("F3/F4 accept bounded text files only")
     print("Large directories use cached metadata and batched row insertion")
+    print("Copy, Move, and Delete use cancellable background workers")
     print(f"Top shortcut bar supports up to {MAX_SHORTCUTS} user links")
     required = {".jpg", ".png", ".pdf", ".xlsx", ".xls"}
     if not required.issubset(PREVIEW_EXTENSIONS):
