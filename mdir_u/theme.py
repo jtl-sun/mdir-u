@@ -6,6 +6,8 @@ from typing import Protocol
 from rich.text import Text
 from textual.theme import Theme
 
+from . import core as legacy
+
 
 THEME_NAME = "total-commander"
 
@@ -74,7 +76,13 @@ _current_marked = MARKED
 def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
     """Render one cached directory entry with the default MDIR theme."""
     prefix = "* " if marked else "  "
-    text = Text(prefix + entry.path.name)
+    text = Text(
+        prefix
+        + legacy.display_file_title(
+            entry.path,
+            is_directory=entry.is_directory,
+        )
+    )
     if marked:
         text.stylize(f"bold {_current_marked}")
     elif entry.is_directory:
@@ -89,7 +97,7 @@ def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
 def path_name_text(path: Path, marked: bool = False) -> Text:
     """Render one filesystem path without changing the original MDIR API."""
     prefix = "* " if marked else "  "
-    text = Text(prefix + path.name)
+    text = Text(prefix + legacy.display_file_title(path))
     if marked:
         text.stylize(f"bold {_current_marked}")
     elif path.is_dir():
@@ -108,7 +116,6 @@ def install_file_colors(theme: Theme | None = None) -> None:
     global _current_executable
     global _current_marked
 
-    from . import core as legacy
     from .file_pane import EditablePathFilePane
 
     if theme is None:
@@ -203,13 +210,16 @@ FilePane .pane_footer {{
 FilePane .pane_summary {{
     background: $panel;
     color: $foreground;
-    border-top: solid $surface-lighten-2;
+    /* A one-row summary cannot also contain a Textual border: the border
+       consumes its only content row and hides Capacity / Files / Folders. */
+    border-top: none;
 }}
 
 FilePane .pane_info {{
     background: $background;
     color: $foreground;
-    border-top: solid $surface-lighten-1;
+    /* Keep all three detail rows (Name, metadata, and Path) visible. */
+    border-top: none;
 }}
 
 .drive-bar,

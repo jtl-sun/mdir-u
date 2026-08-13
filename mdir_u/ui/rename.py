@@ -71,6 +71,11 @@ class SlowRenameDataTable(legacy.MDirDataTable):
             )
 
     async def on_click(self, event: events.Click) -> None:
+        if event.button == 1 and bool(getattr(event, "shift", False)):
+            self._reset_slow_click()
+            event.stop()
+            return
+
         # A normal fast double-click must retain the existing Open action.
         if event.button != 1 or getattr(event, "chain", 1) >= 2:
             self._reset_slow_click()
