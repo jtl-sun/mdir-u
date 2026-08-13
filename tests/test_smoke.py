@@ -8,7 +8,9 @@ import json
 import threading
 import time
 import zipfile
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from mdir_u.app import MDirApp
@@ -56,6 +58,70 @@ from mdir_u.ui.dialogs import FileOperationProgressScreen
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_f4_uses_nano_and_restores_the_file_pane(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            document = root / "notes.txt"
+            document.write_text("before", encoding="utf-8")
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+                app.left.table.move_cursor(
+                    row=app.left.row_by_path[document], column=0
+                )
+                app.set_active("left")
+                with (
+                    patch("mdir_u.core.shutil.which", return_value="/usr/bin/nano"),
+                    patch("mdir_u.core.subprocess.run", return_value=SimpleNamespace(returncode=0)) as run,
+                    patch.object(app, "suspend", return_value=nullcontext()),
+                    patch.object(app, "set_status") as status,
+                ):
+                    app.action_edit()
+
+                run.assert_called_once_with(
+                    ["/usr/bin/nano", str(document)], check=False
+                )
+                status.assert_called_with(f"Finished editing: {document.name}")
+                app.exit()
+
+    async def test_f4_explains_how_to_install_nano(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            document = root / "notes.txt"
+            document.write_text("text", encoding="utf-8")
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+                app.left.table.move_cursor(
+                    row=app.left.row_by_path[document], column=0
+                )
+                app.set_active("left")
+                with (
+                    patch("mdir_u.core.shutil.which", return_value=None),
+                    patch.object(app, "set_status") as status,
+                    patch.object(app, "notify") as notify,
+                ):
+                    app.action_edit()
+
+                message = status.call_args.args[0]
+                self.assertIn("sudo apt install nano", message)
+                self.assertIn("sudo apt install nano", notify.call_args.args[0])
+                app.exit()
+
     def test_more_than_one_thousand_files_copy_move_and_delete(self) -> None:
         """Large batches complete without per-item UI work or lost files."""
         with tempfile.TemporaryDirectory() as directory:

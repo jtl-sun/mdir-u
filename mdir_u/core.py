@@ -2273,15 +2273,30 @@ class MDir(App):
             self.set_status("F4 Edit works on files.")
             return
 
+        nano = shutil.which("nano")
+        if nano is None:
+            message = (
+                "nano editor is not installed. Install it with: "
+                "sudo apt update && sudo apt install nano"
+            )
+            self.set_status(message)
+            self.notify(message, title="Nano editor required")
+            return
+
         try:
-            if os.name == "nt":
-                subprocess.Popen(["notepad.exe", str(path)])
+            self.set_status(f"Opening nano: {path.name}")
+            with self.suspend():
+                result = subprocess.run([nano, str(path)], check=False)
+            self.active.refresh_listing(keep_name=path.name)
+            self.active.update_info()
+            if result.returncode:
+                self.set_status(
+                    f"nano exited with status {result.returncode}: {path.name}"
+                )
             else:
-                editor = os.environ.get("EDITOR", "nano")
-                subprocess.Popen([editor, str(path)])
-            self.set_status(f"Editing: {path.name}")
+                self.set_status(f"Finished editing: {path.name}")
         except Exception as exc:
-            self.set_status(f"Edit failed: {exc}")
+            self.set_status(f"Could not open nano: {exc}")
 
     def action_copy(self) -> None:
         items = self.active.selected_items()

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.22.1
+
+- Changed F4 Edit to open supported text files in the interactive nano editor.
+- The mDir interface is suspended while nano is active and restored when nano
+  exits.
+- Added an installation message with `sudo apt install nano` when nano is not
+  available.
+
 ## 2.22.0
 
 - Ported the current MDIR-P file-management features to Ubuntu and other
