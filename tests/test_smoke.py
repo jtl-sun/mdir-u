@@ -569,10 +569,12 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.press("ctrl+f")
                 await pilot.pause()
                 self.assertIsInstance(app.screen, AdvancedSearchScreen)
-                self.assertEqual(app.screen.initial_root, root.resolve())
-                self.assertEqual(
-                    app.screen.query_one("#search_root").value,
-                    str(root.resolve()),
+                self.assertTrue(os.path.samefile(app.screen.initial_root, root))
+                self.assertTrue(
+                    os.path.samefile(
+                        app.screen.query_one("#search_root").value,
+                        root,
+                    )
                 )
                 await pilot.press("escape")
                 app.exit()
