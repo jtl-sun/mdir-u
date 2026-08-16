@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdir-u"
-version = "2.22.1"
+version = "2.23.1"
 description = "A fast dual-pane Ubuntu and universal terminal file manager with AI and document preview."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,3 +44,6 @@ Issues = "https://github.com/jtl-sun/mdir-u/issues"
 
 [tool.setuptools.packages.find]
 include = ["mdir_u*"]
+
+[tool.setuptools.package-data]
+mdir_u = ["assets/*.png"]

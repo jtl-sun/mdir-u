@@ -13,41 +13,66 @@ file manager from the DOS era.
 ## Highlights
 
 - Fast dual-pane file management with editable paths
-- Cached and batched listings for directories with tens of thousands of files
+- Responsive Copy, Move, and Delete for selections exceeding 1,000 items
+- Cached listings for directories containing tens of thousands of files
 - Preview for images, PDF documents, and Excel workbooks
-- Safe F3 View and F4 Edit for bounded text files
-- AI panel for Codex, Codex Quick, Codex Local, Ollama, and other CLIs
-- Direct local Bash/Shell commands outside the Codex sandbox
-- Ubuntu locations and mounted filesystem selection
-- Total Commander-inspired dark theme
-- Configurable top shortcut bar with an in-app Link Manager
-- Responsive background Copy, Move, and Delete with progress and cancellation
-- Advanced filename and content search with live results
-- Safe batch rename with tokens, counters, and rollback
-- Built-in ZIP creation and secure ZIP extraction
-- Responsive background Copy, Move, and Delete with progress and cancellation
-- Advanced filename and content search with live results
-- Safe batch rename with tokens, counters, and rollback
-- Built-in ZIP creation and secure ZIP extraction
-- English UI with Unicode filename support
+- Safe text viewing with F3 and interactive nano editing with F4
+- Advanced filename and content search
+- Safe batch rename and secure ZIP creation/extraction
+- Ubuntu locations, mounted filesystem selection, and desktop opening
+- Optional Codex, Ollama, and local shell panel
+- Configurable top shortcut bar
 
 Preview is disabled at startup. Press `Ctrl+F3` to show or hide it.
 
-## Ubuntu installation
+## Easy Ubuntu installation or update
+
+Install Git once if needed, download MDIR-U, and run the installer:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip xdg-utils poppler-utils zenity
-
+sudo apt install -y git
 git clone https://github.com/jtl-sun/mdir-u.git
 cd mdir-u
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[preview]"
+./install_ubuntu.sh
 ```
 
-Start MDIR-U with any of these case-sensitive Linux commands:
+The installer:
+
+- installs the required Ubuntu packages, including nano;
+- creates a private environment under `~/.local/share/mdir-u`;
+- installs all Preview dependencies;
+- creates permanent `u`, `U`, and `mdir-u` commands;
+- adds `~/.local/bin` to your login PATH when necessary; and
+- adds **mDIR** to the Ubuntu application menu with its own icon.
+
+The installer can be run again at any time. It safely updates the program and
+keeps personal settings.
+
+### Update a Git installation
+
+```bash
+cd ~/mdir-u
+git pull
+./install_ubuntu.sh
+```
+
+If you cloned it somewhere else, change `~/mdir-u` to that directory.
+
+### Install from a downloaded ZIP
+
+1. Download **Code > Download ZIP** from this GitHub page.
+2. Extract the ZIP and open a terminal in the `mdir-u-main` folder.
+3. Run:
+
+```bash
+chmod +x install_ubuntu.sh
+./install_ubuntu.sh
+```
+
+### Run
+
+Open **mDIR** from the Ubuntu application menu, or use:
 
 ```bash
 u
@@ -55,30 +80,36 @@ U
 mdir-u
 ```
 
-For a local source checkout, you can also run:
+If the current terminal was open before installation and cannot find `u`,
+either open a new terminal or run:
 
 ```bash
-./start_mdir_u.sh
-python3 -m mdir_u
+export PATH="$HOME/.local/bin:$PATH"
 ```
+
+### Uninstall
+
+```bash
+./uninstall_ubuntu.sh
+```
+
+This removes program files and launchers but preserves personal settings.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
 | `Tab`, `Left`, `Right` | Switch active pane |
+| Click anywhere in a pane | Activate the clicked pane |
 | `Enter` | Open directory or file |
 | `Backspace` | Parent directory |
 | `Space` | Mark or unmark |
 | `F2` | Rename |
 | `Ctrl+F2` | Batch rename selected items |
-| `Ctrl+F2` | Batch rename selected items |
 | `F3` | View a supported text file |
 | `F4` | Edit a supported text file with nano |
 | `F5` | Copy |
 | `F6` | Move |
-| `Alt+F5` | Compress selected items to ZIP |
-| `Alt+F6` | Extract the selected ZIP |
 | `Alt+F5` | Compress selected items to ZIP |
 | `Alt+F6` | Extract the selected ZIP |
 | `F7` | Create directory |
@@ -93,63 +124,47 @@ python3 -m mdir_u
 | `Alt+Enter` | Show item properties |
 
 Copy, Move, and permanent Delete run in a background worker. Large batches
-show completed and total counts, the current item, and an ETA; press `Esc` or
-choose **Cancel** to stop after the current top-level item.
+show progress and an ETA; press `Esc` or choose **Cancel** to stop after the
+current top-level item.
 
-Batch Rename supports `[N]`, `[E]`, `[C]`, `[YMD]`, and `[hms]` tokens as well
-as find/replace and regular expressions. ZIP creation and extraction run in
-the background, preserve directory trees, and reject unsafe archive paths.
+Select a file and click it again after a clear pause to Rename. A slightly
+slow double-click opens the item instead of accidentally starting Rename.
 
-`F4` temporarily suspends the mDir interface and opens the selected supported
-text file in `nano`. When nano exits, mDir restores the file panels. If nano is
-not installed, mDir displays the Ubuntu installation command:
+## Top shortcut bar
 
-```bash
-sudo apt update && sudo apt install nano
-```
-| `Alt+Enter` | Show item properties |
-
-Copy, Move, and permanent Delete run in a background worker. Large batches
-show completed and total counts, the current item, and an ETA; press `Esc` or
-choose **Cancel** to stop after the current top-level item.
-
-Batch Rename supports `[N]`, `[E]`, `[C]`, `[YMD]`, and `[hms]` tokens as well
-as find/replace and regular expressions. ZIP creation and extraction run in
-the background, preserve directory trees, and reject unsafe archive paths.
-
-## Top Shortcut Bar
-
-The shortcut bar sits below the title line and can open folders in a chosen
-pane, launch files or programs, open websites, run shell commands, or trigger
-selected MDIR-U actions.
-
-Click **Edit Links** to open the built-in Link Manager. You can edit names,
-types, targets, panes, and arguments; add or remove links; change their order;
-and browse for files or folders. **Save** updates the bar immediately.
-
-MDIR-U stores the links in:
+Click **Edit Links** to edit shortcut names, types, targets, panes, and
+arguments. MDIR-U stores these links in:
 
 ```text
 ~/.mdir-u-shortcuts.json
 ```
 
-The optional Browse buttons use `zenity` or `kdialog` on Linux. The supported
-link types are `folder`, `file`, `program`, `web`, `command`, and `action`.
-Placeholders include `{home}`, `{project}`, `{current}`, `{left}`, and
-`{right}`.
+Supported link types are `folder`, `file`, `program`, `web`, `command`, and
+`action`. Placeholders include `{home}`, `{project}`, `{current}`, `{left}`,
+and `{right}`.
 
 ## AI and local shell
 
-The AI panel is optional. Install and authenticate each provider's CLI
-separately. Codex uses workspace restrictions by default. `Codex Local` and
-`Shell` can directly modify files or install software with the permissions of
-the current Linux account, so review commands before running them.
+The AI panel is optional. Install and authenticate each provider CLI
+separately. `Codex Local` and `Shell` use the current Linux account's direct
+permissions, so review commands before running them.
 
 ## WSL notes
 
 MDIR-U runs in WSL Ubuntu. Windows drives appear under `/mnt`, such as
-`/mnt/c` and `/mnt/s`. Linux GUI actions such as opening a document require
-WSLg or another configured desktop opener.
+`/mnt/c` and `/mnt/s`. Opening graphical applications requires WSLg or another
+configured desktop opener.
+
+## Development validation
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -e ".[preview,dev]"
+python3 -m mdir_u --check
+python3 -m unittest discover -s tests -v
+python3 -m build
+```
 
 ## License
 

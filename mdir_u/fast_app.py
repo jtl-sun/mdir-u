@@ -564,13 +564,14 @@ class FastFileManagerApp(EditablePathApp):
             self._directory_poll_timer = None
         super().on_unmount()
 
-    def set_active(self, side: str) -> None:
+    def set_active(self, side: str, *, focus_table: bool = True) -> None:
         """Change focus without recalculating unchanged drive information."""
         self.active_side = side
         self.left.set_active(side == "left")
         self.right.set_active(side == "right")
         self.active.reset_shift_selection_anchor()
-        self.active.table.focus()
+        if focus_table:
+            self.active.table.focus()
 
     def action_search(self) -> None:
         """Open advanced conditions and reveal the selected result."""

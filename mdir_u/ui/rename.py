@@ -40,8 +40,9 @@ class SlowRenameDataTable(legacy.MDirDataTable):
         ),
     ]
 
-    SLOW_CLICK_MIN_SECONDS = 0.55
-    SLOW_CLICK_MAX_SECONDS = 1.60
+    EXTENDED_DOUBLE_CLICK_MAX_SECONDS = 0.95
+    SLOW_CLICK_MIN_SECONDS = 1.10
+    SLOW_CLICK_MAX_SECONDS = 3.00
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -51,6 +52,17 @@ class SlowRenameDataTable(legacy.MDirDataTable):
     def _reset_slow_click(self) -> None:
         self._rename_click_row = None
         self._rename_click_time = 0.0
+
+    def _repeated_click_action(self, row: int, now: float) -> Optional[str]:
+        """Classify a second single-click on the same row."""
+        if row != self._rename_click_row:
+            return None
+        elapsed = now - self._rename_click_time
+        if 0.0 <= elapsed <= self.EXTENDED_DOUBLE_CLICK_MAX_SECONDS:
+            return "open"
+        if self.SLOW_CLICK_MIN_SECONDS <= elapsed <= self.SLOW_CLICK_MAX_SECONDS:
+            return "rename"
+        return None
 
     def _focus_file_pane(self, side: str) -> None:
         app = self.app
@@ -100,20 +112,20 @@ class SlowRenameDataTable(legacy.MDirDataTable):
 
         path = pane.entries[row]
         now = monotonic()
-        elapsed = now - self._rename_click_time
 
         self.move_cursor(row=row, column=0)
         self._activate_pane()
 
-        should_rename = (
-            path is not None
-            and row == self._rename_click_row
-            and self.SLOW_CLICK_MIN_SECONDS
-            <= elapsed
-            <= self.SLOW_CLICK_MAX_SECONDS
-        )
+        repeated_action = self._repeated_click_action(row, now)
+        if path is not None and repeated_action == "open":
+            self._reset_slow_click()
+            app = self.app
+            if hasattr(app, "_open_from_pane"):
+                app._open_from_pane(pane)
+            event.stop()
+            return
 
-        if should_rename:
+        if path is not None and repeated_action == "rename":
             self._reset_slow_click()
             app = self.app
             if hasattr(app, "action_rename"):

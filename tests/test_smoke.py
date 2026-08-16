@@ -8,6 +8,7 @@ import json
 import threading
 import time
 import zipfile
+import struct
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -55,9 +56,74 @@ from mdir_u.ui.archive import (
 )
 from mdir_u.file_operations import FileOperationResult, run_file_operation
 from mdir_u.ui.dialogs import FileOperationProgressScreen
+from mdir_u import __version__
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    def test_easy_ubuntu_installer_is_included(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        installer = root / "install_ubuntu.sh"
+        uninstaller = root / "uninstall_ubuntu.sh"
+
+        self.assertTrue(installer.is_file())
+        self.assertTrue(uninstaller.is_file())
+        self.assertTrue(installer.stat().st_mode & 0o111)
+        installer_text = installer.read_text(encoding="utf-8")
+        self.assertIn('INSTALL_ROOT="$DATA_HOME/mdir-u"', installer_text)
+        self.assertIn("--force-reinstall", installer_text)
+        self.assertIn("mdir-u.desktop", installer_text)
+
+    def test_version_and_desktop_icon_resource(self) -> None:
+        self.assertEqual(__version__, "2.23.1")
+        icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
+        self.assertTrue(icon.is_file())
+        self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+
+    def test_slow_click_rename_waits_beyond_extended_double_click(self) -> None:
+        from mdir_u.ui.rename import SlowRenameDataTable
+
+        table = SlowRenameDataTable()
+        table._rename_click_row = 7
+        table._rename_click_time = 10.0
+
+        self.assertEqual(table._repeated_click_action(7, 10.80), "open")
+        self.assertIsNone(table._repeated_click_action(7, 11.00))
+        self.assertEqual(table._repeated_click_action(7, 11.11), "rename")
+        self.assertIsNone(table._repeated_click_action(8, 11.50))
+
+    async def test_clicking_empty_table_space_switches_both_panes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_dir = root / "left"
+            right_dir = root / "right"
+            left_dir.mkdir()
+            right_dir.mkdir()
+
+            app = MDirApp()
+            app.left_start = left_dir
+            app.right_start = right_dir
+            app._save_paths = lambda: None
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(100):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                await pilot.click("#right DataTable", offset=(45, 10))
+                await pilot.pause()
+                self.assertEqual(app.active_side, "right")
+                self.assertTrue(app.right.table.has_focus)
+
+                await pilot.click("#left DataTable", offset=(45, 10))
+                await pilot.pause()
+                self.assertEqual(app.active_side, "left")
+                self.assertTrue(app.left.table.has_focus)
+                app.exit()
+
     async def test_f4_uses_nano_and_restores_the_file_pane(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

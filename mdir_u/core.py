@@ -794,6 +794,11 @@ class MDirDataTable(DataTable):
         return None
 
     async def on_mouse_down(self, event: events.MouseDown) -> None:
+        # Empty table space has no row metadata. Activate the pane before
+        # hit-testing so the complete list surface switches panes.
+        if event.button in {1, 3}:
+            self._activate_pane()
+
         if event.button == 1:
             if bool(getattr(event, "shift", False)):
                 row = self._event_row(event)
@@ -1102,6 +1107,19 @@ class FilePane(Vertical):
         yield table
         yield Static("", classes="pane_info")
         yield Static("", classes="pane_summary")
+
+    async def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Activate this side when any non-table area of the pane is clicked."""
+        if event.button not in {1, 3}:
+            return
+        try:
+            app = self.app
+            if isinstance(app, MDir):
+                side = "left" if self.id == "left" else "right"
+                target = getattr(event, "widget", None)
+                app.set_active(side, focus_table=not isinstance(target, Input))
+        except Exception:
+            pass
 
     @staticmethod
     def _fit_widths(
@@ -1873,12 +1891,13 @@ class MDir(App):
     def passive(self) -> FilePane:
         return self.right if self.active_side == "left" else self.left
 
-    def set_active(self, side: str) -> None:
+    def set_active(self, side: str, *, focus_table: bool = True) -> None:
         self.active_side = side
         self.left.set_active(side == "left")
         self.right.set_active(side == "right")
         self.active.reset_shift_selection_anchor()
-        self.active.table.focus()
+        if focus_table:
+            self.active.table.focus()
 
         # During very early mount the toolbar may not exist yet.
         try:

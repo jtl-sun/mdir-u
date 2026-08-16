@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.23.1
+
+- Reworked `install_ubuntu.sh` into a permanent install/update command using a
+  private environment under `~/.local/share/mdir-u`.
+- Added persistent `u`, `U`, and `mdir-u` launchers under `~/.local/bin` and an
+  Ubuntu application-menu entry with the mDIR icon.
+- Added `uninstall_ubuntu.sh` while preserving personal configuration.
+- Added nano to the automatic Ubuntu dependency installation.
+- Extended slow double-click recognition and delayed mouse-triggered Rename.
+- Clicking empty space anywhere in either file pane now activates that pane.
+
 ## 2.22.1
 
 - Changed F4 Edit to open supported text files in the interactive nano editor.
