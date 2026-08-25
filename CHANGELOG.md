@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.23.15
+
+- Ported the complete platform-neutral mDIR-P 2.23.2–2.23.15 feature set to
+  Ubuntu while preserving Linux paths, mounts, shell tools, and XDG storage.
+- Added clickable path segments, trailing path separators, green active-pane
+  styling, and a pale-yellow information separator.
+- Added selected-name MkDir defaults, batch-rename find/delete and optional
+  end numbering with safe `[N]`, one-digit, OFF defaults.
+- Moved large-directory scans off the UI thread, shows the first 250 rows
+  quickly, and cancels obsolete scans when navigation changes.
+- Added compact Move/Delete summaries, immediate cancellation UI, and safe
+  Trash handling for files below 10 GB and directories; no unsafe fallback.
+- Added complete AI process-group force stop, thin cursors in single-line
+  inputs, stale mouse-state cleanup, and final fast-open/slow-rename timing.
+- The Ubuntu installer now verifies that the installed package version exactly
+  matches the downloaded source version.
+
 ## 2.23.2
 
 - Show a compact warning immediately before Copy or Move would overwrite an

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import itertools
 import os
+import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 from rich.text import Text
@@ -18,6 +21,8 @@ from .file_pane import (
     DirectoryPathInput,
     EditablePathFilePane,
     EditablePathApp,
+    display_directory_path,
+    scan_directory_entries,
 )
 from .ui.rename import SlowRenameDataTable
 from . import core as legacy
@@ -29,7 +34,11 @@ DRIVE_USAGE_CACHE_SECONDS = 30.0
 DIRECTORY_POLL_INTERVAL_SECONDS = 0.75
 FILE_LIST_BACKGROUND = "#1e1e1e"
 INITIAL_LISTING_DELAY_SECONDS = 0.01
-INITIAL_ROW_BATCH_SIZE = 2_000
+FIRST_VISIBLE_ROW_BATCH_SIZE = 250
+LISTING_ROW_BATCH_SIZE = 1_500
+UI_HEARTBEAT_INTERVAL_SECONDS = 1.0
+UI_HANG_THRESHOLD_SECONDS = 15.0
+UI_HANG_WATCHDOG_INTERVAL_SECONDS = 2.0
 
 
 class LargeDirectoryFilePane(EditablePathFilePane):
@@ -67,7 +76,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
     def compose(self) -> ComposeResult:
         """Keep summary and detail information in one fixed bottom area."""
         yield DirectoryPathInput(
-            value=str(self.current_path),
+            value=display_directory_path(self.current_path),
             id=f"{self.id}_path",
             classes="pane_path",
         )
@@ -189,21 +198,48 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         self._initial_listing_started = True
         self._listing_generation += 1
         generation = self._listing_generation
+        observed_path = self.current_path
         self.run_worker(
-            self._load_initial_listing(generation),
+            self._load_directory_listing(generation, observed_path, None),
             name=f"{self.id}-initial-listing",
-            group="initial-listing",
+            group=f"{self.id}-directory-listing",
             exclusive=True,
             exit_on_error=False,
         )
 
-    async def _load_initial_listing(self, generation: int) -> None:
-        """Populate startup rows in responsive batches after the shell is visible."""
+    def _show_listing_loading(self, observed_path: Path) -> None:
+        self.table.clear(columns=False)
+        self.entries.clear()
+        self.row_by_path.clear()
+        self.search_rows.clear()
+        self.cached_entries.clear()
+        self.metadata_by_path.clear()
+        self.cached_path = None
+        self.total_file_count = self.total_folder_count = self.total_file_size = 0
+        self.query_one(".pane_info", Static).update(
+            f"Loading directory...\nPath: {observed_path}"
+        )
+        self.query_one(".pane_summary", Static).update(
+            "Scanning directory in background..."
+        )
+
+    async def _load_directory_listing(
+        self,
+        generation: int,
+        observed_path: Path,
+        keep_name: str | None,
+    ) -> None:
+        """Scan off the UI thread and reveal the first rows immediately."""
         started = time.perf_counter()
         try:
-            self._scan_directory()
+            scanned = await asyncio.to_thread(
+                scan_directory_entries, observed_path, self.show_hidden_system
+            )
+            token = await asyncio.to_thread(
+                self._read_directory_change_token, observed_path
+            )
         except (PermissionError, OSError) as exc:
-            if generation != self._listing_generation:
+            if generation != self._listing_generation or self.current_path != observed_path:
                 return
             self.cached_entries.clear()
             self.metadata_by_path.clear()
@@ -217,17 +253,23 @@ class LargeDirectoryFilePane(EditablePathFilePane):
             self.update_summary()
             return
 
-        if generation != self._listing_generation:
+        if generation != self._listing_generation or self.current_path != observed_path:
             return
 
-        rows, target_row = self._prepare_cached_rows()
+        self._apply_scanned_entries(scanned, observed_path)
+        self.large_directory_mode = len(scanned) >= LARGE_DIRECTORY_THRESHOLD
+        self._directory_change_token = token
+
+        rows, target_row = self._prepare_cached_rows(keep_name)
         total_rows = len(rows)
         self.update_summary()
 
-        for offset in range(0, total_rows, INITIAL_ROW_BATCH_SIZE):
-            if generation != self._listing_generation:
+        offset = 0
+        while offset < total_rows:
+            if generation != self._listing_generation or self.current_path != observed_path:
                 return
-            end = min(offset + INITIAL_ROW_BATCH_SIZE, total_rows)
+            batch_size = FIRST_VISIBLE_ROW_BATCH_SIZE if offset == 0 else LISTING_ROW_BATCH_SIZE
+            end = min(offset + batch_size, total_rows)
             self.table.add_rows(rows[offset:end])
             if offset == 0 and self.table.row_count:
                 self.table.move_cursor(row=target_row, column=0)
@@ -236,9 +278,10 @@ class LargeDirectoryFilePane(EditablePathFilePane):
                     f"Loading items: {end:,} / {total_rows:,}\n"
                     f"Path: {self.current_path}"
                 )
+            offset = end
             await asyncio.sleep(0)
 
-        if generation != self._listing_generation:
+        if generation != self._listing_generation or self.current_path != observed_path:
             return
         if self.table.row_count:
             self.table.move_cursor(row=target_row, column=0)
@@ -270,13 +313,24 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         )
 
     def refresh_listing(self, keep_name: str | None = None) -> None:
+        """Start a non-blocking scan whenever the displayed path changes."""
         self._initial_listing_started = True
         self._listing_generation += 1
+        generation = self._listing_generation
+        observed_path = self.current_path
         self.initial_listing_complete = False
-        started = time.perf_counter()
-        super().refresh_listing(keep_name)
-        self.last_listing_seconds = time.perf_counter() - started
-        self.initial_listing_complete = True
+        arrow = "DESC" if self.sort_reverse else "ASC"
+        self._update_path_bar(
+            f"{observed_path}   [Sort: {self.sort_mode.upper()} {arrow}]"
+        )
+        self._show_listing_loading(observed_path)
+        self.run_worker(
+            self._load_directory_listing(generation, observed_path, keep_name),
+            name=f"{self.id}-directory-listing",
+            group=f"{self.id}-directory-listing",
+            exclusive=True,
+            exit_on_error=False,
+        )
 
     def set_sort(self, mode: str) -> None:
         """Cancel partial startup insertion before applying a complete sort."""
@@ -421,11 +475,12 @@ class FastFileManagerApp(EditablePathApp):
         /* Keep the detail area in normal layout flow. A docked footer can be
            pushed below the visible pane when Windows Terminal has fewer rows
            after the shortcut bar is added. */
-        height: 4;
-        min-height: 4;
-        max-height: 4;
-        padding: 0;
+        height: 6;
+        min-height: 6;
+        max-height: 6;
+        padding: 1 0 0 0;
         margin: 0;
+        border-top: solid #E6D98A;
         background: #080808;
     }
 
@@ -447,7 +502,13 @@ class FastFileManagerApp(EditablePathApp):
     def __init__(self) -> None:
         self._last_drive_poll = 0.0
         self._drive_usage_cache: dict[str, tuple[float, str]] = {}
+        self._directory_poll_running = False
         self._directory_poll_timer = None
+        self._ui_heartbeat = time.monotonic()
+        self._ui_heartbeat_timer = None
+        self._hang_watchdog_stop = threading.Event()
+        self._hang_watchdog_thread: threading.Thread | None = None
+        self._hang_reported = False
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -465,6 +526,10 @@ class FastFileManagerApp(EditablePathApp):
             DIRECTORY_POLL_INTERVAL_SECONDS,
             self._poll_directory_changes,
         )
+        self._ui_heartbeat_timer = self.set_interval(
+            UI_HEARTBEAT_INTERVAL_SECONDS, self._record_ui_heartbeat
+        )
+        self._start_hang_watchdog()
         self.call_after_refresh(self._stabilize_startup_frame)
         # A short fallback timer guarantees removal even when a terminal
         # coalesces the two startup refresh notifications into one frame.
@@ -487,15 +552,57 @@ class FastFileManagerApp(EditablePathApp):
             pass
         self.active.table.focus()
 
+    def _record_ui_heartbeat(self) -> None:
+        self._ui_heartbeat = time.monotonic()
+
+    @staticmethod
+    def _hang_log_path() -> Path:
+        base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+        return base / "mdir-u" / "mdir-hang.log"
+
+    def _start_hang_watchdog(self) -> None:
+        if self._hang_watchdog_thread is not None:
+            return
+        self._hang_watchdog_stop.clear()
+        self._hang_watchdog_thread = threading.Thread(
+            target=self._watch_ui_heartbeat, name="mdir-u-ui-watchdog", daemon=True
+        )
+        self._hang_watchdog_thread.start()
+
+    def _watch_ui_heartbeat(self) -> None:
+        while not self._hang_watchdog_stop.wait(UI_HANG_WATCHDOG_INTERVAL_SECONDS):
+            elapsed = time.monotonic() - self._ui_heartbeat
+            if elapsed < UI_HANG_THRESHOLD_SECONDS:
+                self._hang_reported = False
+                continue
+            if self._hang_reported:
+                continue
+            self._hang_reported = True
+            try:
+                path = self._hang_log_path()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as log:
+                    log.write(f"\n=== mDIR-U UI hang {datetime.now().isoformat(timespec='seconds')} ({elapsed:.1f}s) ===\n")
+                    faulthandler.dump_traceback(file=log, all_threads=True)
+            except Exception:
+                pass
+
+    def on_app_blur(self, event: events.AppBlur) -> None:
+        for pane in (self.left, self.right):
+            pane.table.cancel_pointer_interaction()
+
     def _poll_directory_changes(self) -> None:
         """Check both directory timestamps without blocking the UI thread."""
+        if self._directory_poll_running:
+            return
+        self._directory_poll_running = True
         paths = (
             ("left", self.left.current_path),
             ("right", self.right.current_path),
         )
         self._read_directory_tokens_in_background(paths)
 
-    @work(thread=True, exclusive=True, group="mdir-directory-poll")
+    @work(thread=True, group="mdir-directory-poll")
     def _read_directory_tokens_in_background(
         self,
         paths: tuple[tuple[str, Path], tuple[str, Path]],
@@ -508,7 +615,11 @@ class FastFileManagerApp(EditablePathApp):
             )
             for side, path in paths
         )
-        self.call_from_thread(self._apply_directory_changes, snapshots)
+        self.call_from_thread(self._finish_directory_poll, snapshots)
+
+    def _finish_directory_poll(self, snapshots) -> None:
+        self._directory_poll_running = False
+        self._apply_directory_changes(snapshots)
 
     def _apply_directory_changes(
         self,
@@ -562,6 +673,10 @@ class FastFileManagerApp(EditablePathApp):
         if self._directory_poll_timer is not None:
             self._directory_poll_timer.stop()
             self._directory_poll_timer = None
+        if self._ui_heartbeat_timer is not None:
+            self._ui_heartbeat_timer.stop()
+            self._ui_heartbeat_timer = None
+        self._hang_watchdog_stop.set()
         super().on_unmount()
 
     def set_active(self, side: str, *, focus_table: bool = True) -> None:

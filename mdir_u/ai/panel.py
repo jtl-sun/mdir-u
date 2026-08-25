@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
 import unicodedata
@@ -29,6 +30,38 @@ from .providers import (
     sanitize_terminal_output,
 )
 from ..ui.dialogs import CompactConfirmScreen
+
+
+def force_kill_process_tree(
+    process: subprocess.Popen[str],
+    *,
+    platform_name: str | None = None,
+) -> None:
+    """Force-stop a provider and every child process it started."""
+    if process.poll() is not None:
+        return
+    platform = os.name if platform_name is None else platform_name
+    if platform == "nt":
+        try:
+            subprocess.run(
+                ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+    if process.poll() is None:
+        try:
+            process.kill()
+        except OSError:
+            pass
 
 
 class AICommandEditor(TextArea):
@@ -538,14 +571,26 @@ class AIPanel(Vertical):
         if self.process and self.process.poll() is None:
             self.stop_requested = True
             self._refresh_activity()
-            self.process.terminate()
-            self._append("[yellow]Stop requested.[/]")
+            process = self.process
+            self._append("[bold yellow]Force stopping AI process...[/]")
+            self.force_stop_process(process)
         elif self.activity_running:
             self.stop_requested = True
             self._refresh_activity()
-            self._append("[yellow]The task is starting; Stop was requested.[/]")
+            self._append(
+                "[bold yellow]Force stop armed; the task will be killed "
+                "as soon as its process starts.[/]"
+            )
         else:
             self._append("[dim]No AI task is running.[/]")
+
+    @work(thread=True, exclusive=True, group="ai-force-stop")
+    def force_stop_process(self, process: subprocess.Popen[str]) -> None:
+        force_kill_process_tree(process)
+        self.app.call_from_thread(
+            self._append,
+            "[bold yellow]AI process tree was force-stopped.[/]",
+        )
 
     @on(AICommandEditor.Submitted, "#ai_prompt")
     def prompt_submitted(self, event: AICommandEditor.Submitted) -> None:
@@ -808,9 +853,12 @@ class AIPanel(Vertical):
             return
 
         command = provider.build_command(prompt, cwd, session_id)
-        creationflags = (
-            subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        )
+        creationflags = 0
+        popen_options: dict[str, object] = {}
+        if os.name == "nt":
+            creationflags = subprocess.CREATE_NO_WINDOW
+        else:
+            popen_options["start_new_session"] = True
         if self.stop_requested:
             self.app.call_from_thread(
                 self._finish_activity,
@@ -833,9 +881,10 @@ class AIPanel(Vertical):
                 errors="replace",
                 bufsize=1,
                 creationflags=creationflags,
+                **popen_options,
             )
             if self.stop_requested:
-                self.process.terminate()
+                force_kill_process_tree(self.process)
             self.app.call_from_thread(
                 self._set_activity_phase,
                 "Waiting for provider",

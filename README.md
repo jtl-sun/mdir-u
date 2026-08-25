@@ -15,11 +15,16 @@ file manager from the DOS era.
 - Fast dual-pane file management with editable paths
 - Responsive Copy, Move, and Delete for selections exceeding 1,000 items
 - Compact overwrite warning before Copy or Move replaces a same-name item
-- Cached listings for directories containing tens of thousands of files
+- Background directory scans that show the first 250 rows quickly, even in
+  directories containing tens of thousands of files
 - Preview for images, PDF documents, and Excel workbooks
 - Safe text viewing with F3 and interactive nano editing with F4
 - Advanced filename and content search
-- Safe batch rename and secure ZIP creation/extraction
+- Safe batch rename with find/delete and optional end numbering, plus secure
+  ZIP creation/extraction
+- Clickable path segments, green active-pane styling, and clear item details
+- Files below 10 GB and directories go to the Ubuntu Trash; files of 10 GB or
+  more require permanent deletion
 - Ubuntu locations, mounted filesystem selection, and desktop opening
 - Optional Codex, Ollama, and local shell panel
 - Configurable top shortcut bar
@@ -46,6 +51,7 @@ The installer:
 - creates permanent `u`, `U`, and `mdir-u` commands;
 - adds `~/.local/bin` to your login PATH when necessary; and
 - adds **mDIR** to the Ubuntu application menu with its own icon.
+- verifies that the installed version exactly matches the downloaded source.
 
 The installer can be run again at any time. It safely updates the program and
 keeps personal settings.
@@ -124,12 +130,16 @@ This removes program files and launchers but preserves personal settings.
 | `Shift+F10` | Open a terminal at the selected directory |
 | `Alt+Enter` | Show item properties |
 
-Copy, Move, and permanent Delete run in a background worker. Large batches
-show progress and an ETA; press `Esc` or choose **Cancel** to stop after the
-current top-level item.
+Copy, Move, and Delete run in a background worker. Large batches show progress
+and an ETA; press `Esc` or choose **Cancel** to close the progress dialog
+immediately and prevent another top-level item from starting.
 
-Select a file and click it again after a clear pause to Rename. A slightly
-slow double-click opens the item instead of accidentally starting Rename.
+A fast second click within 0.75 seconds opens the item. A deliberate second
+click after 1.0–3.0 seconds starts Rename.
+
+Batch Rename starts with the safe `[N]` pattern, one counter digit, and both
+quick options OFF. Turn on **Delete found text** to remove a phrase, or **End
+number** to append a counter only when requested.
 
 ## Top shortcut bar
 

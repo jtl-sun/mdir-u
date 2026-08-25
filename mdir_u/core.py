@@ -15,7 +15,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
+from textual.widgets import Button, DataTable, Footer, Header, Label, Static
+
+from .ui.inputs import ThinCursorInput as Input
 
 
 from . import __version__
@@ -745,6 +747,17 @@ class MDirDataTable(DataTable):
             self._right_drag_scroll_timer.pause()
         self._drag_rows_seen.clear()
         self._right_drag_last_row = None
+
+    def cancel_pointer_interaction(self) -> None:
+        """Release stale mouse state when the terminal loses focus."""
+        self._resize_key = None
+        self._resize_next_key = None
+        self._resize_snapshot.clear()
+        self.end_right_drag()
+        try:
+            self.release_mouse()
+        except Exception:
+            pass
 
     def _render_boundaries(self) -> list[tuple[str, int]]:
         """Return actual rendered right-edge x positions for all columns.
@@ -2399,6 +2412,9 @@ class MDir(App):
         )
 
     def action_mkdir(self) -> None:
+        selected = self.active.selected_path()
+        initial_name = selected.name if selected is not None else ""
+
         def got_name(name: Optional[str]) -> None:
             if not name:
                 return
@@ -2411,7 +2427,10 @@ class MDir(App):
             except Exception as exc:
                 self.set_status(f"MkDir failed: {exc}")
 
-        self.push_screen(self.PROMPT_SCREEN("New directory name:"), got_name)
+        self.push_screen(
+            self.PROMPT_SCREEN("New directory name:", initial_name),
+            got_name,
+        )
 
     def action_delete(self) -> None:
         items = self.active.selected_items()

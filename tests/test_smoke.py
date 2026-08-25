@@ -55,10 +55,14 @@ from mdir_u.ui.archive import (
     next_available_zip_path,
 )
 from mdir_u.file_operations import (
+    PERMANENT_DELETE_THRESHOLD_BYTES,
     FileOperationResult,
     destination_conflicts,
     run_file_operation,
+    should_permanently_delete,
 )
+from mdir_u.file_pane import display_directory_path, path_segment_target
+from mdir_u.base import delete_confirmation_message, move_confirmation_message
 from mdir_u.ui.dialogs import CompactConfirmScreen, FileOperationProgressScreen
 from mdir_u import __version__
 
@@ -76,9 +80,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('INSTALL_ROOT="$DATA_HOME/mdir-u"', installer_text)
         self.assertIn("--force-reinstall", installer_text)
         self.assertIn("mdir-u.desktop", installer_text)
+        self.assertIn("EXPECTED_VERSION", installer_text)
+        self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.23.2")
+        self.assertEqual(__version__, "2.23.15")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
@@ -90,9 +96,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         table._rename_click_row = 7
         table._rename_click_time = 10.0
 
-        self.assertEqual(table._repeated_click_action(7, 10.80), "open")
-        self.assertIsNone(table._repeated_click_action(7, 11.00))
-        self.assertEqual(table._repeated_click_action(7, 11.11), "rename")
+        self.assertEqual(table._repeated_click_action(7, 10.70), "open")
+        self.assertIsNone(table._repeated_click_action(7, 10.90))
+        self.assertEqual(table._repeated_click_action(7, 11.05), "rename")
         self.assertIsNone(table._repeated_click_action(8, 11.50))
 
     async def test_clicking_empty_table_space_switches_both_panes(self) -> None:
@@ -219,10 +225,56 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(any(copied.iterdir()))
             moved_paths = sorted(moved.iterdir())
 
-            delete_result = run_file_operation("delete", moved_paths)
+            def trash(path: Path) -> None:
+                path.unlink()
+
+            with patch("mdir_u.file_operations.send_to_recycle_bin", trash):
+                delete_result = run_file_operation("delete", moved_paths)
             self.assertEqual(delete_result.completed, 1_005)
             self.assertFalse(delete_result.errors)
             self.assertFalse(any(moved.iterdir()))
+
+    def test_path_segments_and_trailing_separator(self) -> None:
+        self.assertEqual(display_directory_path(Path("/srv/data")), "/srv/data/")
+        self.assertEqual(path_segment_target("/srv/data/work/", 6), "/srv/data")
+
+    def test_batch_rename_safe_defaults_and_quick_options(self) -> None:
+        defaults = BatchRenameOptions()
+        self.assertEqual(defaults.name_pattern, "[N]")
+        self.assertEqual(defaults.digits, 1)
+        self.assertFalse(defaults.delete_found_text)
+        self.assertFalse(defaults.append_counter)
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "remove-this.txt"
+            source.write_text("x", encoding="utf-8")
+            pairs, errors = build_rename_pairs(
+                [source],
+                BatchRenameOptions(
+                    find_text="remove-",
+                    delete_found_text=True,
+                    append_counter=True,
+                    start=2,
+                ),
+            )
+            self.assertFalse(errors)
+            self.assertEqual(pairs[0].target.name, "this_2.txt")
+
+    def test_ubuntu_trash_policy_and_compact_summaries(self) -> None:
+        self.assertFalse(should_permanently_delete(is_directory=True, size=99**9))
+        self.assertFalse(should_permanently_delete(is_directory=False, size=1))
+        self.assertTrue(
+            should_permanently_delete(
+                is_directory=False, size=PERMANENT_DELETE_THRESHOLD_BYTES
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "one.bin"
+            path.write_bytes(b"1234")
+            move = move_confirmation_message([path], Path("/tmp/target"))
+            delete = delete_confirmation_message([path])
+            self.assertIn("1 file(s)", move)
+            self.assertIn("Move to:", move)
+            self.assertIn("Trash: 1 item(s)", delete)
 
     def test_copy_and_move_require_explicit_overwrite_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -897,11 +949,17 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     "confirm_yes",
                     "Delete confirmation must default to Yes",
                 )
-                await pilot.press("enter")
-                for _ in range(200):
-                    if not app._file_operation_busy:
-                        break
-                    await pilot.pause(0.01)
+                def trash(path: Path) -> None:
+                    path.unlink()
+
+                with patch(
+                    "mdir_u.file_operations.send_to_recycle_bin", trash
+                ):
+                    await pilot.press("enter")
+                    for _ in range(200):
+                        if not app._file_operation_busy:
+                            break
+                        await pilot.pause(0.01)
 
                 self.assertFalse(moved.exists())
                 app.exit()

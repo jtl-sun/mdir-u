@@ -6,19 +6,52 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rich.text import Text
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.coordinate import Coordinate
 from textual.message import Message
-from textual.widgets import Input, Static
+from textual.widgets import Static
 
 from .base import BaseApp
 from . import core as legacy
 from .ui.rename import SlowRenameDataTable
+from .ui.inputs import ThinCursorInput as Input
 
 
 AI_SELECTOR_WIDTH = 30
+
+
+def path_segment_target(path_text: str, character_index: int) -> str | None:
+    """Return the cumulative directory represented by a clicked character."""
+    text = path_text.strip()
+    if not text:
+        return None
+
+    index = max(0, min(int(character_index), len(text) - 1))
+    separators = "\\/"
+    if text[index] in separators:
+        if index == 0:
+            return text[0]
+        index -= 1
+
+    following = [
+        position
+        for separator in separators
+        if (position := text.find(separator, index + 1)) >= 0
+    ]
+    end = min(following) if following else len(text)
+    target = text[:end].rstrip(separators)
+    return target or text[0]
+
+
+def display_directory_path(path: Path | str) -> str:
+    """Format a directory for the path bar with a trailing separator."""
+    text = str(path)
+    if not text or text.endswith(("\\", "/")):
+        return text
+    separator = "\\" if "\\" in text else os.sep
+    return text + separator
 
 
 class DirectoryPathInput(Input):
@@ -36,6 +69,39 @@ class DirectoryPathInput(Input):
 
     class Cancelled(Message):
         """Request cancellation without changing the current directory."""
+
+    class SegmentClicked(Message):
+        """Request navigation to the cumulative clicked path segment."""
+
+        def __init__(self, path: str) -> None:
+            super().__init__()
+            self.path = path
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._path_click_moved = False
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        self._path_click_moved = False
+        await super()._on_mouse_down(event)
+
+    async def _on_mouse_move(self, event: events.MouseMove) -> None:
+        before = self.selection
+        await super()._on_mouse_move(event)
+        if self.selection != before:
+            self._path_click_moved = True
+
+    async def _on_mouse_up(self, event: events.MouseUp) -> None:
+        selection = self.selection
+        await super()._on_mouse_up(event)
+        if event.button != 1 or self._path_click_moved:
+            return
+        start, end = selection
+        if start != end:
+            return
+        target = path_segment_target(self.value, end)
+        if target is not None:
+            self.post_message(self.SegmentClicked(target))
 
     def action_cancel_path_edit(self) -> None:
         self.post_message(self.Cancelled())
@@ -58,6 +124,58 @@ class CachedEntry:
     modified_text: str = ""
 
 
+def scan_directory_entries(
+    path: Path,
+    show_hidden_system: bool,
+) -> list[CachedEntry]:
+    """Read directory metadata without touching Textual widget state."""
+    scanned: list[CachedEntry] = []
+    with os.scandir(path) as directory:
+        for item in directory:
+            try:
+                stat = item.stat()
+                attributes = int(getattr(stat, "st_file_attributes", 0))
+                if not show_hidden_system:
+                    if os.name == "nt":
+                        hidden = bool(
+                            attributes & legacy.FILE_ATTRIBUTE_HIDDEN
+                            or attributes & legacy.FILE_ATTRIBUTE_SYSTEM
+                        )
+                    else:
+                        hidden = item.name.startswith(".")
+                    if hidden:
+                        continue
+
+                is_directory = stat_module.S_ISDIR(stat.st_mode)
+                if not is_directory and not stat_module.S_ISREG(stat.st_mode):
+                    continue
+                scanned.append(
+                    CachedEntry(
+                        path=Path(item.path),
+                        is_directory=is_directory,
+                        size=0 if is_directory else int(stat.st_size),
+                        modified=float(stat.st_mtime),
+                        name_casefold=item.name.casefold(),
+                        extension=(
+                            ""
+                            if is_directory
+                            else os.path.splitext(item.name)[1]
+                            .lower()
+                            .lstrip(".")
+                        ),
+                        size_text=(
+                            "<DIR>"
+                            if is_directory
+                            else legacy.human_size(int(stat.st_size))
+                        ),
+                        modified_text=legacy.fmt_time(float(stat.st_mtime)),
+                    )
+                )
+            except OSError:
+                continue
+    return scanned
+
+
 class EditablePathFilePane(BaseFilePane):
     """File pane with a directly editable directory path bar."""
 
@@ -73,7 +191,7 @@ class EditablePathFilePane(BaseFilePane):
 
     def compose(self) -> ComposeResult:
         yield DirectoryPathInput(
-            value=str(self.current_path),
+            value=display_directory_path(self.current_path),
             id=f"{self.id}_path",
             classes="pane_path",
         )
@@ -82,6 +200,14 @@ class EditablePathFilePane(BaseFilePane):
         yield table
         yield Static("", classes="pane_info")
         yield Static("", classes="pane_summary")
+
+    def _update_path_bar(self, text: str) -> None:
+        """Show the editable directory path with a trailing separator."""
+        path_widget = self.query_one(".pane_path")
+        if isinstance(path_widget, DirectoryPathInput):
+            path_widget.value = display_directory_path(self.current_path)
+        else:
+            super()._update_path_bar(text)
 
     @staticmethod
     def _name_text(entry: CachedEntry, marked: bool) -> Text:
@@ -144,65 +270,24 @@ class EditablePathFilePane(BaseFilePane):
 
     def _scan_directory(self) -> None:
         """Scan once and retain all metadata needed by the table and summary."""
-        scanned: list[CachedEntry] = []
+        scanned = scan_directory_entries(
+            self.current_path,
+            self.show_hidden_system,
+        )
+        self._apply_scanned_entries(scanned, self.current_path)
 
-        with os.scandir(self.current_path) as directory:
-            for item in directory:
-                try:
-                    stat = item.stat()
-                    attributes = int(
-                        getattr(stat, "st_file_attributes", 0)
-                    )
-                    if not self.show_hidden_system:
-                        if os.name == "nt":
-                            hidden = bool(
-                                attributes & legacy.FILE_ATTRIBUTE_HIDDEN
-                                or attributes & legacy.FILE_ATTRIBUTE_SYSTEM
-                            )
-                        else:
-                            hidden = item.name.startswith(".")
-                        if hidden:
-                            continue
-
-                    is_directory = stat_module.S_ISDIR(stat.st_mode)
-                    if (
-                        not is_directory
-                        and not stat_module.S_ISREG(stat.st_mode)
-                    ):
-                        continue
-                    scanned.append(
-                        CachedEntry(
-                            path=Path(item.path),
-                            is_directory=is_directory,
-                            size=0 if is_directory else int(stat.st_size),
-                            modified=float(stat.st_mtime),
-                            name_casefold=item.name.casefold(),
-                            extension=(
-                                ""
-                                if is_directory
-                                else os.path.splitext(item.name)[1]
-                                .lower()
-                                .lstrip(".")
-                            ),
-                            size_text=(
-                                "<DIR>"
-                                if is_directory
-                                else legacy.human_size(int(stat.st_size))
-                            ),
-                            modified_text=legacy.fmt_time(
-                                float(stat.st_mtime)
-                            ),
-                        )
-                    )
-                except OSError:
-                    continue
-
+    def _apply_scanned_entries(
+        self,
+        scanned: list[CachedEntry],
+        scanned_path: Path,
+    ) -> None:
+        """Install a completed scan on the UI thread and sort its cache."""
         self.cached_entries = scanned
         self.metadata_by_path = {
             entry.path: entry for entry in scanned
         }
         self.marked.intersection_update(self.metadata_by_path)
-        self.cached_path = self.current_path
+        self.cached_path = scanned_path
         self.total_file_count = sum(
             not entry.is_directory for entry in scanned
         )
@@ -442,7 +527,7 @@ class EditablePathFilePane(BaseFilePane):
 
     def _restore_path_and_focus_table(self) -> None:
         path_input = self.query_one(".pane_path", DirectoryPathInput)
-        path_input.value = str(self.current_path)
+        path_input.value = display_directory_path(self.current_path)
         self.table.focus()
 
     def navigate_to_path(self, entered_path: str) -> bool:
@@ -463,9 +548,9 @@ class EditablePathFilePane(BaseFilePane):
             if not candidate.is_dir():
                 raise NotADirectoryError("path is not a directory")
         except (OSError, RuntimeError) as exc:
-            self.query_one(".pane_path", DirectoryPathInput).value = str(
-                self.current_path
-            )
+            self.query_one(
+                ".pane_path", DirectoryPathInput
+            ).value = display_directory_path(self.current_path)
             self.app.set_status(f"Invalid directory: {entered_path} ({exc})")
             return False
 
@@ -484,6 +569,19 @@ class EditablePathFilePane(BaseFilePane):
         self.table.focus()
         return True
 
+    @on(DirectoryPathInput.SegmentClicked)
+    def path_segment_clicked(
+        self,
+        event: DirectoryPathInput.SegmentClicked,
+    ) -> None:
+        current = str(self.current_path.resolve())
+        target = str(Path(event.path).expanduser().resolve())
+        if target == current:
+            self.query_one(".pane_path", DirectoryPathInput).focus()
+        else:
+            self.navigate_to_path(event.path)
+        event.stop()
+
     @on(Input.Submitted, ".pane_path")
     def path_submitted(self, event: Input.Submitted) -> None:
         self.navigate_to_path(event.value)
@@ -499,7 +597,7 @@ class EditablePathFilePane(BaseFilePane):
 class EditablePathApp(BaseApp):
     """AI-enabled file manager with editable paths and cached metadata."""
 
-    TITLE = "MDIR-P"
+    TITLE = "MDIR-U"
     SUB_TITLE = (
         "Dual Pane File Manager / Codex AI / "
         "Codex Quick / Korean IME"
@@ -511,20 +609,35 @@ class EditablePathApp(BaseApp):
         max-width: {AI_SELECTOR_WIDTH};
     }}
 
+    FilePane {{ border: round #31523c; }}
+    FilePane.active {{ border: heavy #35d477; }}
+
     FilePane .pane_path {{
         height: 1;
         min-height: 1;
         max-height: 1;
         border: none;
         padding: 0 1;
-        background: #0000aa;
+        background: #173522;
         color: white;
     }}
 
     FilePane .pane_path:focus {{
         border: none;
-        background: #075985;
+        background: #178f4b;
         color: white;
+    }}
+
+    FilePane.active .pane_path {{
+        background: #146b3a;
+        color: white;
+        text-style: bold;
+    }}
+
+    FilePane.active DataTable > .datatable--cursor {{
+        background: #176b45;
+        color: white;
+        text-style: bold;
     }}
     """
 

@@ -13,7 +13,9 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.coordinate import Coordinate
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, Label, Select, Static
+from textual.widgets import Button, DataTable, Label, Select, Static
+
+from .inputs import ThinCursorInput as Input
 
 from ..shortcuts import MAX_SHORTCUTS, SHORTCUT_KINDS, ShortcutDefinition
 

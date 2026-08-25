@@ -2,6 +2,7 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+EXPECTED_VERSION=$(sed -n 's/^__version__ = "\([^"]*\)"/\1/p' "$SCRIPT_DIR/mdir_u/__init__.py")
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 INSTALL_ROOT="$DATA_HOME/mdir-u"
 VENV_ROOT="$INSTALL_ROOT/venv"
@@ -68,7 +69,11 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$APPLICATIONS_ROOT" >/dev/null 2>&1 || true
 fi
 
-VERSION=$("$VENV_ROOT/bin/python" -c 'import mdir_u; print(mdir_u.__version__)')
+VERSION=$("$VENV_ROOT/bin/python" -P -c 'import mdir_u; print(mdir_u.__version__)')
+if [ -z "$EXPECTED_VERSION" ] || [ "$VERSION" != "$EXPECTED_VERSION" ]; then
+    printf '%s\n' "Version verification failed: expected $EXPECTED_VERSION, installed $VERSION" >&2
+    exit 1
+fi
 printf '\n%s\n' "MDIR-U $VERSION installed successfully."
 printf '%s\n' "Commands: u, U, mdir-u"
 printf '%s\n' "Application menu: mDIR"

@@ -14,7 +14,9 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, Label, Select, Static
+
+from .inputs import ThinCursorInput as Input
 
 
 class ArchiveError(RuntimeError):

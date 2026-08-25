@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
@@ -10,6 +11,7 @@ from typing import Callable, Iterable, Literal
 
 FileOperation = Literal["copy", "move", "delete"]
 ProgressCallback = Callable[[int, int, str], None]
+PERMANENT_DELETE_THRESHOLD_BYTES = 10 * 1024**3
 
 
 @dataclass
@@ -21,6 +23,8 @@ class FileOperationResult:
     completed: int = 0
     skipped: int = 0
     cancelled: bool = False
+    recycled: int = 0
+    permanently_deleted: int = 0
     completed_names: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -64,6 +68,27 @@ def _remove_existing_target(path: Path) -> None:
         path.unlink()
 
 
+def should_permanently_delete(*, is_directory: bool, size: int) -> bool:
+    """Only individual files of 10 GiB or larger bypass the Trash."""
+    return not is_directory and size >= PERMANENT_DELETE_THRESHOLD_BYTES
+
+
+def send_to_recycle_bin(path: Path) -> None:
+    """Move an item to the freedesktop Trash without unsafe fallback."""
+    gio = shutil.which("gio")
+    if gio is None:
+        raise OSError("gio is unavailable; item was not deleted")
+    completed = subprocess.run(
+        [gio, "trash", "--", str(path.resolve(strict=False))],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise OSError(detail or "could not move item to Trash")
+
+
 def run_file_operation(
     operation: FileOperation,
     items: Iterable[Path],
@@ -93,10 +118,16 @@ def run_file_operation(
         display_name = source.name
         try:
             if operation == "delete":
-                if source.is_dir() and not source.is_symlink():
-                    shutil.rmtree(source)
-                else:
+                is_directory = source.is_dir() and not source.is_symlink()
+                size = 0 if is_directory else int(source.stat().st_size)
+                if should_permanently_delete(
+                    is_directory=is_directory, size=size
+                ):
                     source.unlink()
+                    result.permanently_deleted += 1
+                else:
+                    send_to_recycle_bin(source)
+                    result.recycled += 1
             else:
                 assert destination is not None
                 target_name = (

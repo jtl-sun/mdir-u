@@ -10,7 +10,9 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ProgressBar, Select, Static
+from textual.widgets import Button, Label, ProgressBar, Select, Static
+
+from .inputs import ThinCursorInput as Input
 
 
 class CompactConfirmScreen(ModalScreen[bool]):
@@ -239,13 +241,14 @@ class FileOperationProgressScreen(ModalScreen[None]):
         )
 
     def request_cancel(self) -> None:
+        if self.cancel_event.is_set():
+            return
         self.cancel_event.set()
-        self.query_one("#file_operation_item", Static).update(
-            "Cancelling after the current item..."
+        self.app.set_status(
+            "Cancellation requested. The current filesystem call may finish "
+            "in the background."
         )
-        button = self.query_one("#file_operation_cancel", Button)
-        button.disabled = True
-        button.label = "Cancelling..."
+        self.dismiss(None)
 
     @on(Button.Pressed, "#file_operation_cancel")
     def cancel_clicked(self, event: Button.Pressed) -> None:

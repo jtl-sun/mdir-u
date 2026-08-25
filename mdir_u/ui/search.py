@@ -16,7 +16,9 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, DataTable, Label, Select, Static
+
+from .inputs import ThinCursorInput as Input
 from textual.worker import Worker
 
 
