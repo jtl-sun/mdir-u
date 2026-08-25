@@ -14,6 +14,7 @@ file manager from the DOS era.
 
 - Fast dual-pane file management with editable paths
 - Responsive Copy, Move, and Delete for selections exceeding 1,000 items
+- Compact overwrite warning before Copy or Move replaces a same-name item
 - Cached listings for directories containing tens of thousands of files
 - Preview for images, PDF documents, and Excel workbooks
 - Safe text viewing with F3 and interactive nano editing with F4

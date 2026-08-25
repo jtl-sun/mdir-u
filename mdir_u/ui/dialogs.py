@@ -81,14 +81,20 @@ class CompactConfirmScreen(ModalScreen[bool]):
     }
     """
 
-    def __init__(self, message: str, title: str = "Confirm") -> None:
+    def __init__(
+        self,
+        message: str,
+        title: str = "Confirm",
+        *,
+        compact: bool = False,
+    ) -> None:
         super().__init__()
         self.message = message
         self.dialog_title = title
         lines = message.splitlines() or [message]
         longest = max((cell_len(line) for line in lines), default=20)
         self.preferred_width = max(
-            72,
+            48 if compact else 72,
             longest + 8,
             cell_len("Enter/Y: Yes   N/Esc/X: Cancel") + 6,
         )

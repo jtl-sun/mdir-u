@@ -54,8 +54,12 @@ from mdir_u.ui.archive import (
     extract_zip_archive,
     next_available_zip_path,
 )
-from mdir_u.file_operations import FileOperationResult, run_file_operation
-from mdir_u.ui.dialogs import FileOperationProgressScreen
+from mdir_u.file_operations import (
+    FileOperationResult,
+    destination_conflicts,
+    run_file_operation,
+)
+from mdir_u.ui.dialogs import CompactConfirmScreen, FileOperationProgressScreen
 from mdir_u import __version__
 
 
@@ -74,7 +78,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("mdir-u.desktop", installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.23.1")
+        self.assertEqual(__version__, "2.23.2")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
@@ -219,6 +223,42 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(delete_result.completed, 1_005)
             self.assertFalse(delete_result.errors)
             self.assertFalse(any(moved.iterdir()))
+
+    def test_copy_and_move_require_explicit_overwrite_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_dir = root / "source"
+            destination = root / "destination"
+            source_dir.mkdir()
+            destination.mkdir()
+
+            source = source_dir / "same-name.txt"
+            target = destination / source.name
+            source.write_text("new copy", encoding="utf-8")
+            target.write_text("existing copy", encoding="utf-8")
+
+            self.assertEqual(
+                destination_conflicts([source], destination),
+                [target],
+            )
+            blocked = run_file_operation("copy", [source], destination)
+            self.assertEqual(blocked.completed, 0)
+            self.assertEqual(blocked.skipped, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), "existing copy")
+
+            copied = run_file_operation(
+                "copy", [source], destination, overwrite=True
+            )
+            self.assertEqual(copied.completed, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), "new copy")
+
+            source.write_text("new move", encoding="utf-8")
+            moved = run_file_operation(
+                "move", [source], destination, overwrite=True
+            )
+            self.assertEqual(moved.completed, 1)
+            self.assertFalse(source.exists())
+            self.assertEqual(target.read_text(encoding="utf-8"), "new move")
 
     def test_large_file_operation_can_cancel_between_items(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -866,6 +906,59 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(moved.exists())
                 app.exit()
 
+    async def test_copy_and_move_show_small_warning_before_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_root = root / "left"
+            right_root = root / "right"
+            left_root.mkdir()
+            right_root.mkdir()
+            source = left_root / "same-name.txt"
+            target = right_root / source.name
+            source.write_text("new", encoding="utf-8")
+            target.write_text("keep", encoding="utf-8")
+
+            app = MDirApp()
+            app.left_start = left_root
+            app.right_start = right_root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                app.left.marked = {source}
+                app.action_copy()
+                await pilot.pause()
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertIsInstance(app.screen, CompactConfirmScreen)
+                self.assertEqual(app.screen.dialog_title, "Overwrite warning")
+                self.assertLessEqual(app.screen.preferred_width, 58)
+                await pilot.press("escape")
+                await pilot.pause()
+                self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+                self.assertTrue(source.exists())
+
+                app.left.marked = {source}
+                app.action_move()
+                await pilot.pause()
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertIsInstance(app.screen, CompactConfirmScreen)
+                self.assertEqual(app.screen.dialog_title, "Overwrite warning")
+                await pilot.press("escape")
+                await pilot.pause()
+                self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+                self.assertTrue(source.exists())
+                app.exit()
+
     async def test_background_file_operation_ui_can_cancel_without_freezing(
         self,
     ) -> None:
@@ -886,6 +979,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 destination=None,
                 *,
                 new_name=None,
+                overwrite=False,
                 cancel_event=None,
                 progress=None,
             ):

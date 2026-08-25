@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.23.2
+
+- Show a compact warning immediately before Copy or Move would overwrite an
+  existing same-name file or directory.
+- Keep both the source and existing destination unchanged when the overwrite
+  warning is cancelled.
+- Require explicit overwrite approval in the Linux background file-operation
+  engine as a second safety layer.
+
 ## 2.23.1
 
 - Reworked `install_ubuntu.sh` into a permanent install/update command using a

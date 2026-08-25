@@ -18,7 +18,12 @@ from .ui.dialogs import (
     CopyRequest,
     FileOperationProgressScreen,
 )
-from .file_operations import FileOperation, FileOperationResult, run_file_operation
+from .file_operations import (
+    FileOperation,
+    FileOperationResult,
+    destination_conflicts,
+    run_file_operation,
+)
 from .ui.batch_rename import (
     BatchRenameScreen,
     RenamePair,
@@ -39,6 +44,27 @@ from .ui.archive import (
 
 
 KOREAN_WIDTH_COMPATIBILITY = enable_windows_korean_width_compatibility()
+
+
+def overwrite_confirmation_message(
+    operation: FileOperation,
+    conflicts: list[Path],
+) -> str:
+    """Build a compact warning without expanding a large selection list."""
+    count = len(conflicts)
+    noun = "item" if count == 1 else "items"
+    verb = "exists" if count == 1 else "exist"
+    pronoun = "it" if count == 1 else "them"
+    preview = "\n".join(path.name for path in conflicts[:3])
+    remainder = count - min(count, 3)
+    if remainder:
+        preview += f"\n... and {remainder:,} more"
+    return (
+        f"{count:,} same-name {noun} already {verb}.\n"
+        f"{operation.title()} will overwrite {pronoun}. Continue?\n"
+        f"{preview}"
+    )
+
 
 def windows_volume_label(drive: str) -> str:
     """Return a Windows volume label without querying drive capacity."""
@@ -339,12 +365,40 @@ class BaseApp(AIShellApp):
                 self.set_status("Copy cancelled.")
                 return
 
-            self._start_file_operation(
-                "copy",
-                tuple(items),
+            selected = tuple(items)
+            conflicts = destination_conflicts(
+                selected,
                 destination,
-                source_side,
                 new_name=request.new_name,
+            )
+
+            def start_copy(overwrite: bool = False) -> None:
+                self._start_file_operation(
+                    "copy",
+                    selected,
+                    destination,
+                    source_side,
+                    new_name=request.new_name,
+                    overwrite=overwrite,
+                )
+
+            if not conflicts:
+                start_copy()
+                return
+
+            def overwrite_confirmed(ok: bool) -> None:
+                if not ok:
+                    self.set_status("Copy cancelled; existing items kept.")
+                    return
+                start_copy(overwrite=True)
+
+            self.push_screen(
+                self.CONFIRM_SCREEN(
+                    overwrite_confirmation_message("copy", conflicts),
+                    title="Overwrite warning",
+                    compact=True,
+                ),
+                overwrite_confirmed,
             )
 
         self.push_screen(
@@ -367,8 +421,33 @@ class BaseApp(AIShellApp):
             if not ok:
                 self.set_status("Move cancelled.")
                 return
-            self._start_file_operation(
-                "move", tuple(items), destination, source_side
+            selected = tuple(items)
+            conflicts = destination_conflicts(selected, destination)
+            if not conflicts:
+                self._start_file_operation(
+                    "move", selected, destination, source_side
+                )
+                return
+
+            def overwrite_confirmed(overwrite_ok: bool) -> None:
+                if not overwrite_ok:
+                    self.set_status("Move cancelled; existing items kept.")
+                    return
+                self._start_file_operation(
+                    "move",
+                    selected,
+                    destination,
+                    source_side,
+                    overwrite=True,
+                )
+
+            self.push_screen(
+                self.CONFIRM_SCREEN(
+                    overwrite_confirmation_message("move", conflicts),
+                    title="Overwrite warning",
+                    compact=True,
+                ),
+                overwrite_confirmed,
             )
 
         self.push_screen(
@@ -409,6 +488,7 @@ class BaseApp(AIShellApp):
         source_side: str,
         *,
         new_name: str | None = None,
+        overwrite: bool = False,
     ) -> None:
         """Open progress UI and start the filesystem work off the UI thread."""
         if self._file_operation_busy:
@@ -429,6 +509,7 @@ class BaseApp(AIShellApp):
             destination,
             source_side,
             new_name,
+            overwrite,
             cancel_event,
         )
 
@@ -440,6 +521,7 @@ class BaseApp(AIShellApp):
         destination: Path | None,
         source_side: str,
         new_name: str | None,
+        overwrite: bool,
         cancel_event: Event,
     ) -> None:
         """Run large file batches without blocking the Textual event loop."""
@@ -462,6 +544,7 @@ class BaseApp(AIShellApp):
                 items,
                 destination,
                 new_name=new_name,
+                overwrite=overwrite,
                 cancel_event=cancel_event,
                 progress=report,
             )

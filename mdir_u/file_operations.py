@@ -32,12 +32,45 @@ def _same_path(first: Path, second: Path) -> bool:
     )
 
 
+def _path_exists(path: Path) -> bool:
+    """Return True for normal entries and broken symbolic links."""
+    return os.path.lexists(path)
+
+
+def destination_conflicts(
+    items: Iterable[Path],
+    destination: Path,
+    *,
+    new_name: str | None = None,
+) -> list[Path]:
+    """Return existing top-level targets that would be overwritten."""
+    paths = tuple(Path(item) for item in items)
+    conflicts: list[Path] = []
+    for source in paths:
+        target_name = (
+            new_name if len(paths) == 1 and new_name else source.name
+        )
+        target = Path(destination) / target_name
+        if not _same_path(source, target) and _path_exists(target):
+            conflicts.append(target)
+    return conflicts
+
+
+def _remove_existing_target(path: Path) -> None:
+    """Remove one explicitly approved overwrite target on Linux."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
 def run_file_operation(
     operation: FileOperation,
     items: Iterable[Path],
     destination: Path | None = None,
     *,
     new_name: str | None = None,
+    overwrite: bool = False,
     cancel_event: Event | None = None,
     progress: ProgressCallback | None = None,
 ) -> FileOperationResult:
@@ -77,12 +110,26 @@ def run_file_operation(
                     if progress is not None:
                         progress(index, result.total, display_name)
                     continue
+                target_exists = _path_exists(target)
+                if target_exists and not overwrite:
+                    result.skipped += 1
+                    if progress is not None:
+                        progress(index, result.total, display_name)
+                    continue
                 if operation == "copy":
                     if source.is_dir():
+                        if target_exists and (
+                            not target.is_dir() or target.is_symlink()
+                        ):
+                            _remove_existing_target(target)
                         shutil.copytree(source, target, dirs_exist_ok=True)
                     else:
+                        if target_exists and target.is_dir():
+                            _remove_existing_target(target)
                         shutil.copy2(source, target)
                 else:
+                    if target_exists:
+                        _remove_existing_target(target)
                     shutil.move(str(source), str(target))
                 display_name = target_name
 
