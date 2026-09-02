@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -313,19 +314,8 @@ def search_files(
     )
 
 
-def _human_size(size: int) -> str:
-    value = float(max(0, size))
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if value < 1024.0 or unit == "TB":
-            if unit == "B":
-                return f"{int(value)} B"
-            if value >= 100:
-                return f"{value:.0f} {unit}"
-            if value >= 10:
-                return f"{value:.1f} {unit}"
-            return f"{value:.2f} {unit}"
-        value /= 1024.0
-    return f"{size} B"
+def _display_file_size(size: int) -> str:
+    return f"{max(0, int(size)):,}"
 
 
 class SearchResultsTable(DataTable):
@@ -801,10 +791,13 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
                     result.path.suffix.lower().lstrip(".").upper()
                     or "FILE"
                 ),
-                "<DIR>"
-                if result.is_directory
-                else _human_size(result.size),
-                datetime.fromtimestamp(result.modified).strftime(
+                Text(
+                    "<DIR>"
+                    if result.is_directory
+                    else _display_file_size(result.size),
+                    justify="center" if result.is_directory else "right",
+                ),
+                "  " + datetime.fromtimestamp(result.modified).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),
             )

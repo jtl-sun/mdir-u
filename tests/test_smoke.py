@@ -42,6 +42,7 @@ from mdir_u.ui.batch_rename import (
 from mdir_u.ui.search import (
     AdvancedSearchScreen,
     SearchRequest,
+    _display_file_size,
     search_files,
 )
 from mdir_u.ui.archive import (
@@ -61,7 +62,11 @@ from mdir_u.file_operations import (
     run_file_operation,
     should_permanently_delete,
 )
-from mdir_u.file_pane import display_directory_path, path_segment_target
+from mdir_u.file_pane import (
+    display_directory_path,
+    path_segment_target,
+    scan_directory_entries,
+)
 from mdir_u.base import delete_confirmation_message, move_confirmation_message
 from mdir_u.ui.dialogs import CompactConfirmScreen, FileOperationProgressScreen
 from mdir_u import __version__
@@ -84,7 +89,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.23.15")
+        self.assertEqual(__version__, "2.23.29")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
@@ -100,6 +105,42 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(table._repeated_click_action(7, 10.90))
         self.assertEqual(table._repeated_click_action(7, 11.05), "rename")
         self.assertIsNone(table._repeated_click_action(8, 11.50))
+
+    def test_file_list_sizes_show_complete_comma_separated_bytes(self) -> None:
+        self.assertEqual(legacy.display_file_size(4_590_867), "4,590,867")
+        self.assertEqual(legacy.display_file_size(0), "0")
+        self.assertEqual(_display_file_size(23_940_227), "23,940,227")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sample = root / "sample.m4a"
+            sample.write_bytes(b"x" * 12_345)
+            entries = scan_directory_entries(root, False)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].size_text, "12,345")
+
+    def test_first_click_on_another_file_is_always_selection_only(self) -> None:
+        from mdir_u.ui.rename import SlowRenameDataTable
+
+        table = SlowRenameDataTable()
+        table._rename_click_row = 8
+        table._rename_click_time = 10.0
+        table._prepare_left_click_row(clicked_row=12, previous_cursor_row=8)
+
+        self.assertIsNone(table._rename_click_row)
+        self.assertEqual(table._rename_click_time, 0.0)
+        self.assertTrue(table._consume_selection_only_click(12))
+        self.assertFalse(table._consume_selection_only_click(12))
+
+    def test_selection_click_expires_after_point_two_seconds(self) -> None:
+        from mdir_u.ui.rename import SlowRenameDataTable
+
+        table = SlowRenameDataTable()
+        table._record_selection_click(12, 10.0)
+        self.assertEqual(table._selection_followup_action(12, 10.20), "open")
+        table._record_selection_click(12, 20.0)
+        self.assertEqual(table._selection_followup_action(12, 20.21), "restart")
+        self.assertIsNone(table._selection_click_row)
 
     async def test_clicking_empty_table_space_switches_both_panes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -132,6 +173,46 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
                 self.assertEqual(app.active_side, "left")
                 self.assertTrue(app.left.table.has_focus)
+                app.exit()
+
+    async def test_first_click_selects_row_on_manually_scrolled_page(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_dir = root / "left"
+            right_dir = root / "right"
+            left_dir.mkdir()
+            right_dir.mkdir()
+            for index in range(100):
+                (right_dir / f"file-{index:03d}.txt").write_text(
+                    str(index), encoding="utf-8"
+                )
+
+            app = MDirApp()
+            app.left_start = left_dir
+            app.right_start = right_dir
+            app._save_paths = lambda: None
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(150):
+                    if app.right.initial_listing_complete and app.right.table.row_count >= 101:
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                table = app.right.table
+                clicked_row = 55
+                event = SimpleNamespace(
+                    button=1,
+                    shift=False,
+                    x=25,
+                    y=5,
+                    style=SimpleNamespace(meta={"row": clicked_row}),
+                    stop=lambda: None,
+                )
+                await table.on_mouse_down(event)
+                await pilot.pause()
+
+                self.assertEqual(app.active_side, "right")
+                self.assertEqual(table.cursor_row, clicked_row)
                 app.exit()
 
     async def test_f4_uses_nano_and_restores_the_file_pane(self) -> None:
@@ -1143,6 +1224,49 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(pane.marked, expected)
                 app.exit()
 
+    async def test_right_click_anchor_then_shift_left_click_selects_range(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = [root / f"item-{index:02d}.txt" for index in range(10)]
+            for path in files:
+                path.write_text(path.name, encoding="utf-8")
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                pane = app.left
+                table = pane.table
+                start_row = pane.row_by_path[files[2]]
+                end_row = pane.row_by_path[files[7]]
+                expected = {
+                    path
+                    for path in pane.entries[start_row : end_row + 1]
+                    if path is not None
+                }
+
+                def row_offset(row: int) -> tuple[int, int]:
+                    return (10, int(table.header_height) + row)
+
+                await pilot.click(
+                    "#left DataTable", offset=row_offset(start_row), button=3
+                )
+                with patch.object(table, "_read_shift_pressed", return_value=True):
+                    await pilot.click(
+                        "#left DataTable", offset=row_offset(end_row), button=1
+                    )
+                await pilot.pause()
+
+                self.assertEqual(pane.marked, expected)
+                self.assertEqual(table.cursor_row, end_row)
+                app.exit()
+
     async def test_right_drag_auto_scroll_continues_selection_beyond_page(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1193,11 +1317,51 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             legacy.display_file_title(path, is_directory=False),
             "sample.design",
         )
-        self.assertEqual(legacy.display_extension(".png"), "   png")
+        self.assertEqual(legacy.display_extension(".png"), "  png")
+        size_cell = legacy.right_aligned_size("4,590,867")
+        self.assertEqual(size_cell.plain, "4,590,867")
+        self.assertEqual(size_cell.justify, "right")
+        directory_cell = legacy.centered_directory_size()
+        self.assertEqual(directory_cell.plain, "<DIR>")
+        self.assertEqual(directory_cell.justify, "center")
         self.assertEqual(
             legacy.display_file_title(Path("folder.name"), is_directory=True),
             "folder.name",
         )
+
+    def test_ext_width_migration_runs_only_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ".mdir-u.json"
+            legacy_config = root / ".mdir18.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "column_widths": {
+                            "name": 52,
+                            "extension": 12,
+                            "size": 18,
+                            "modified": 22,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(legacy, "CONFIG_PATH", config),
+                patch.object(legacy, "LEGACY_CONFIG_PATH", legacy_config),
+            ):
+                first = legacy.MDir._load_column_widths(None)
+                second = legacy.MDir._load_column_widths(None)
+
+            self.assertEqual(first["extension"], 10)
+            self.assertEqual(second["extension"], 10)
+            saved = json.loads(config.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved["column_layout_version"],
+                legacy.CURRENT_COLUMN_LAYOUT_VERSION,
+            )
 
     async def test_both_panels_auto_refresh_after_external_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

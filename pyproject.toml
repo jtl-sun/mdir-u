@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdir-u"
-version = "2.23.15"
+version = "2.23.29"
 description = "A fast dual-pane Ubuntu and universal terminal file manager with AI and document preview."
 readme = "README.md"
 requires-python = ">=3.11"

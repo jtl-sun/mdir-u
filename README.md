@@ -13,7 +13,7 @@ built for Linux terminals and the Ubuntu desktop.
 
 ### Download for Ubuntu
 
-[**Download mDIR-U 2.23.15**](https://github.com/jtl-sun/mdir-u/releases/tag/v2.23.15)
+[**Download mDIR-U 2.23.29**](https://github.com/jtl-sun/mdir-u/releases/tag/v2.23.29)
 · [Windows version](https://github.com/jtl-sun/mdir-p)
 
 ```bash
@@ -42,6 +42,11 @@ file manager from the DOS era.
 - Safe batch rename with find/delete and optional end numbering, plus secure
   ZIP creation/extraction
 - Clickable path segments, green active-pane styling, and clear item details
+- Exact comma-separated byte sizes, compact centered column headings, and
+  visible ascending/descending sort arrows
+- Direct mouse selection on any visible page; a first click only selects,
+  fast double-click opens, and a deliberate slow click pair starts Rename
+- Right-click selection anchors followed by Shift+left-click range selection
 - Files below 10 GB and directories go to the Ubuntu Trash; files of 10 GB or
   more require permanent deletion
 - Ubuntu locations, mounted filesystem selection, and desktop opening

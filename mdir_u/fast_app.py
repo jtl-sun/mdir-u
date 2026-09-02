@@ -112,7 +112,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
                 (
                     Text("..", style=legacy.PARENT_DIRECTORY_STYLE),
                     "",
-                    "<DIR>",
+                    legacy.centered_directory_size(),
                     "",
                 )
             )
@@ -293,7 +293,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
     @staticmethod
     def _format_display_values(
         entry: CachedEntry,
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, Text, str]:
         return (
             legacy.display_extension(
                 entry.extension
@@ -303,13 +303,16 @@ class LargeDirectoryFilePane(EditablePathFilePane):
                     else entry.path.suffix.lower().lstrip(".")
                 )
             ),
-            entry.size_text
-            or (
-                "<DIR>"
+            (
+                legacy.centered_directory_size()
                 if entry.is_directory
-                else legacy.human_size(entry.size)
+                else legacy.right_aligned_size(
+                    entry.size_text or legacy.display_file_size(entry.size)
+                )
             ),
-            entry.modified_text or legacy.fmt_time(entry.modified),
+            legacy.display_modified_text(
+                entry.modified_text or legacy.fmt_time(entry.modified)
+            ),
         )
 
     def refresh_listing(self, keep_name: str | None = None) -> None:
@@ -396,8 +399,14 @@ class LargeDirectoryFilePane(EditablePathFilePane):
                 column = table.columns[key]
                 column.width = int(display_widths[key])
                 column.auto_width = False
+                title = self._column_header_title(key)
+                builder = (
+                    self._centered_header_label
+                    if key in {"extension", "size", "modified"}
+                    else self._header_label
+                )
                 column.label = Text(
-                    self._header_label(key.title(), display_widths[key])
+                    builder(title, display_widths[key])
                 )
             table.clear_cached_dimensions()
             table._clear_caches()

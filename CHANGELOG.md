@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.23.29
+
+- Brought the Ubuntu edition up to feature parity with the platform-neutral
+  changes in mDIR-P 2.23.16–2.23.29.
+- A first file click now only selects the requested row. A fast click pair
+  opens it, while a deliberate slow pair starts Rename without stale timing.
+- Mouse selection now lands directly on the clicked row on any scrolled page,
+  without first jumping to the top or bottom of the visible page.
+- Added right-click selection anchors and Shift+left-click range selection;
+  Shift+right-click remains an ordinary right-click selection action.
+- File sizes now show complete comma-separated byte counts, file sizes align
+  right, directory markers center, compact `Ext`/`Size`/`Modified` headers
+  center, and the active sort direction appears in the column heading.
+- Replaced width-changing drawn input cursors with the terminal's zero-width
+  vertical cursor to prevent text spacing flicker while editing.
+- Kept Ubuntu-native terminal events, paths, Trash, launchers, and the offline
+  Debian package; Windows pointer polling, WinGet, and PowerShell installers
+  are intentionally not included.
+
 ## 2.23.15
 
 - Ported the complete platform-neutral mDIR-P 2.23.2–2.23.15 feature set to

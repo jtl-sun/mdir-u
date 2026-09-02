@@ -28,27 +28,29 @@ CONFIG_PATH = Path.home() / ".config" / "mdir-u" / "config.json"
 LEGACY_CONFIG_PATH = Path.home() / ".mdir-u.json"
 DEFAULT_COLUMN_WIDTHS = {
     "name": 52,
-    "extension": 12,
-    "size": 12,
-    "modified": 20,
+    "extension": 10,
+    "size": 18,
+    "modified": 22,
 }
+CURRENT_COLUMN_LAYOUT_VERSION = 2
 
 COLUMN_MIN_WIDTHS = {
     "name": 12,
     "extension": 9,
-    "size": 9,
-    "modified": 16,
+    "size": 16,
+    "modified": 21,
 }
 
 COLUMN_HARD_MIN_WIDTHS = {
     "name": 6,
     "extension": 4,
-    "size": 6,
+    "size": 10,
     "modified": 8,
 }
 
 COLUMN_ORDER = ("name", "extension", "size", "modified")
-EXTENSION_GAP = "   "
+EXTENSION_GAP = "  "
+SIZE_MODIFIED_GAP = "  "
 
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"
@@ -97,6 +99,38 @@ def human_size(size: int) -> str:
             return f"{value:,.1f} {unit}" if value < 10 else f"{value:,.0f} {unit}"
         value /= 1024
     return f"{size:,} B"
+
+
+def display_file_size(size: int) -> str:
+    """Format an exact byte count for file-list Size columns."""
+    return f"{max(0, int(size)):,}"
+
+
+def right_aligned_size(value: str) -> Text:
+    """Right-align a file size to the real edge of the Size column."""
+    return Text(
+        value,
+        justify="right",
+        no_wrap=True,
+        overflow="crop",
+        end="",
+    )
+
+
+def centered_directory_size() -> Text:
+    """Center the directory marker within the Size column."""
+    return Text(
+        "<DIR>",
+        justify="center",
+        no_wrap=True,
+        overflow="crop",
+        end="",
+    )
+
+
+def display_modified_text(value: str) -> str:
+    """Reserve a visible two-cell gutter before the Modified column."""
+    return SIZE_MODIFIED_GAP + value
 
 
 def fmt_time(ts: float) -> str:
@@ -366,8 +400,8 @@ class ColumnWidthScreen(ModalScreen[Optional[dict[str, int]]]):
         limits = {
             "name": (12, 120),
             "extension": (5, 30),
-            "size": (7, 24),
-            "modified": (12, 32),
+            "size": (10, 24),
+            "modified": (21, 32),
         }
 
         for key in ("name", "extension", "size", "modified"):
@@ -617,6 +651,18 @@ class MDirDataTable(DataTable):
         self._resize_start_width = 0
         self._resize_next_start_width = 0
         self._resize_snapshot: dict[str, int] = {}
+        self._shift_mouse_click_pending = False
+
+    @staticmethod
+    def _read_shift_pressed(event: events.MouseEvent) -> bool:
+        """Read Shift from the terminal mouse event on Linux."""
+        return bool(getattr(event, "shift", False))
+
+    def _shift_click_active(self, event: events.MouseEvent) -> bool:
+        """Keep the MouseDown Shift result available through Click."""
+        return self._shift_mouse_click_pending or self._read_shift_pressed(
+            event
+        )
 
     def _hover_row(self) -> Optional[int]:
         try:
@@ -806,22 +852,57 @@ class MDirDataTable(DataTable):
 
         return None
 
+    def _prepare_left_click_row(
+        self,
+        clicked_row: int,
+        previous_cursor_row: int,
+    ) -> None:
+        """Allow subclasses to classify a row before it becomes selected."""
+
     async def on_mouse_down(self, event: events.MouseDown) -> None:
+        shift_pressed = self._read_shift_pressed(event)
+        if event.button in {1, 3}:
+            self._shift_mouse_click_pending = shift_pressed
+
+        # Anchor the cursor to the rendered row before focus can scroll the
+        # old keyboard cursor back into view on another page.
+        if event.button == 1 and not shift_pressed:
+            try:
+                clicked_row = int(event.style.meta.get("row", -1))
+            except Exception:
+                clicked_row = -1
+            if 0 <= clicked_row < self.row_count:
+                try:
+                    previous_cursor_row = int(self.cursor_row)
+                except Exception:
+                    previous_cursor_row = -1
+                self._prepare_left_click_row(
+                    clicked_row,
+                    previous_cursor_row,
+                )
+                self.move_cursor(
+                    row=clicked_row,
+                    column=0,
+                    animate=False,
+                    scroll=False,
+                )
+
         # Empty table space has no row metadata. Activate the pane before
         # hit-testing so the complete list surface switches panes.
         if event.button in {1, 3}:
             self._activate_pane()
 
-        if event.button == 1:
-            if bool(getattr(event, "shift", False)):
-                row = self._event_row(event)
-                pane = self._pane()
-                if row is not None and pane is not None:
-                    self._activate_pane()
-                    pane.select_range_to(row)
-                    event.stop()
-                    return
+        # A right click establishes the range anchor. Shift+left-click extends
+        # the range; Shift+right-click remains a normal right-button action.
+        if event.button == 1 and shift_pressed:
+            row = self._event_row(event)
+            pane = self._pane()
+            if row is not None and pane is not None:
+                pane.select_range_to(row)
+                event.stop()
+                return
 
+        if event.button == 1:
             key = self._header_resize_hit(event.x, event.y)
             if key is not None:
                 pane = self._pane()
@@ -883,6 +964,9 @@ class MDirDataTable(DataTable):
             row = self._event_row(event)
             if row is not None:
                 self._toggle_drag_range_to(row)
+                pane = self._pane()
+                if pane is not None:
+                    pane.set_shift_selection_anchor(row)
 
             event.stop()
 
@@ -1012,7 +1096,7 @@ class MDirDataTable(DataTable):
             event.stop()
             return
 
-        if event.button == 1 and bool(getattr(event, "shift", False)):
+        if event.button == 1 and self._shift_click_active(event):
             event.stop()
             return
 
@@ -1198,29 +1282,82 @@ class FilePane(Vertical):
         visible_title = title[: max(0, width - 2)]
         return visible_title.ljust(width - 1) + "│"
 
+    @staticmethod
+    def _centered_header_label(title: str, width: int) -> str:
+        """Center a title while retaining the right-edge separator."""
+        width = max(1, int(width))
+        if width == 1:
+            return "│"
+        visible_title = title[: max(0, width - 2)]
+        return visible_title.center(width - 1) + "│"
+
+    def _column_header_title(self, key: str) -> str:
+        titles = {
+            "name": "Name",
+            "extension": "Ext",
+            "size": "Size",
+            "modified": "Modified",
+        }
+        mode_by_key = {
+            "name": "name",
+            "extension": "ext",
+            "size": "size",
+            "modified": "modified",
+        }
+        title = titles[key]
+        if self.sort_mode == mode_by_key[key]:
+            arrow = "▼" if self.sort_reverse else "▲"
+            return f"{arrow} {title}"
+        return title
+
+    def _update_sort_headers(self) -> None:
+        """Refresh header labels after the sort field or direction changes."""
+        try:
+            table = self.table
+            for key in COLUMN_ORDER:
+                title = self._column_header_title(key)
+                width = self.display_column_widths[key]
+                builder = (
+                    self._centered_header_label
+                    if key in {"extension", "size", "modified"}
+                    else self._header_label
+                )
+                table.columns[key].label = Text(builder(title, width))
+            table.clear_cached_dimensions()
+            table._clear_caches()
+            table.refresh()
+        except Exception:
+            pass
+
     def _add_columns(self, table: MDirDataTable) -> None:
         widths = self.display_column_widths
 
         table.add_column(
-            self._header_label("Name", widths["name"]),
+            self._header_label(
+                self._column_header_title("name"), widths["name"]
+            ),
             width=widths["name"],
             key="name",
         )
         table.add_column(
-            self._header_label(
-                EXTENSION_GAP + "Extension",
+            self._centered_header_label(
+                self._column_header_title("extension"),
                 widths["extension"],
             ),
             width=widths["extension"],
             key="extension",
         )
         table.add_column(
-            self._header_label("Size", widths["size"]),
+            self._centered_header_label(
+                self._column_header_title("size"), widths["size"]
+            ),
             width=widths["size"],
             key="size",
         )
         table.add_column(
-            self._header_label("Modified", widths["modified"]),
+            self._centered_header_label(
+                self._column_header_title("modified"), widths["modified"]
+            ),
             width=widths["modified"],
             key="modified",
         )
@@ -1301,6 +1438,7 @@ class FilePane(Vertical):
         else:
             self.sort_mode = mode
             self.sort_reverse = False
+        self._update_sort_headers()
         current = self.selected_path()
         self.refresh_listing(keep_name=current.name if current else None)
 
@@ -1325,7 +1463,7 @@ class FilePane(Vertical):
             self.table.add_row(
                 Text("..", style=PARENT_DIRECTORY_STYLE),
                 "",
-                "<DIR>",
+                centered_directory_size(),
                 "",
             )
             self.entries.append(None)
@@ -1354,8 +1492,17 @@ class FilePane(Vertical):
                     if path.is_dir()
                     else display_extension(path.suffix.lower())
                 )
-                size = "<DIR>" if path.is_dir() else human_size(stat.st_size)
-                self.table.add_row(name, extension, size, fmt_time(stat.st_mtime))
+                size = (
+                    centered_directory_size()
+                    if path.is_dir()
+                    else right_aligned_size(display_file_size(stat.st_size))
+                )
+                self.table.add_row(
+                    name,
+                    extension,
+                    size,
+                    display_modified_text(fmt_time(stat.st_mtime)),
+                )
                 self.entries.append(path)
             except OSError:
                 continue
@@ -1422,6 +1569,17 @@ class FilePane(Vertical):
         """End the current Shift+Arrow range-selection session."""
         self.shift_anchor_row = None
         self.shift_base_marked = set()
+
+    def set_shift_selection_anchor(self, row: int) -> None:
+        """Use an explicit mouse-selected row as the next Shift range start."""
+        if self.table.row_count <= 0:
+            self.reset_shift_selection_anchor()
+            return
+        self.shift_anchor_row = max(
+            0,
+            min(self.table.row_count - 1, int(row)),
+        )
+        self.shift_base_marked = set(self.marked)
 
     def shift_select(self, delta: int) -> None:
         """Extend or shrink a contiguous selection with Shift+Up/Down.
@@ -1765,11 +1923,19 @@ class MDir(App):
             if not isinstance(saved, dict):
                 return widths
 
+            try:
+                layout_version = int(data.get("column_layout_version", 0))
+            except (TypeError, ValueError):
+                layout_version = 0
+            migrate_extension_width = (
+                layout_version < CURRENT_COLUMN_LAYOUT_VERSION
+            )
+
             limits = {
                 "name": (12, 120),
                 "extension": (5, 30),
-                "size": (7, 24),
-                "modified": (12, 32),
+                "size": (10, 24),
+                "modified": (21, 32),
             }
 
             for key, default_value in DEFAULT_COLUMN_WIDTHS.items():
@@ -1778,8 +1944,23 @@ class MDir(App):
                 except (TypeError, ValueError):
                     value = default_value
 
+                if key == "extension" and migrate_extension_width:
+                    value -= 2
+
                 lo, hi = limits[key]
                 widths[key] = max(lo, min(hi, value))
+
+            if migrate_extension_width:
+                data["column_widths"] = dict(widths)
+                data["column_layout_version"] = CURRENT_COLUMN_LAYOUT_VERSION
+                try:
+                    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    CONFIG_PATH.write_text(
+                        json.dumps(data, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
 
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return dict(DEFAULT_COLUMN_WIDTHS)
@@ -1808,6 +1989,7 @@ class MDir(App):
                         "left": str(self.left.current_path),
                         "right": str(self.right.current_path),
                         "column_widths": dict(self.column_widths),
+                        "column_layout_version": CURRENT_COLUMN_LAYOUT_VERSION,
                         "show_hidden_system": bool(self.show_hidden_system),
                     },
                     ensure_ascii=False,

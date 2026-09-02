@@ -1,15 +1,53 @@
 from __future__ import annotations
 
-from rich.style import Style
 from rich.text import Text
+from textual.geometry import Offset
 from textual.strip import Strip
 from textual.widgets import Input
 
 
 class ThinCursorInput(Input):
-    """Textual Input with an insertion bar instead of a full-cell cursor."""
+    """Input using the terminal's zero-width steady insertion bar."""
 
-    CURSOR_BAR_STYLE = Style(color="#f2f2f2", bold=True)
+    _STEADY_BAR = "\x1b[6 q"
+    _SHOW_CURSOR = "\x1b[?25h"
+    _HIDE_CURSOR = "\x1b[?25l"
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.cursor_blink = False
+
+    @property
+    def insertion_cursor_screen_offset(self) -> Offset:
+        """Return the insertion boundary rather than the next text cell."""
+        x, y, _width, _height = self.content_region
+        scroll_x, _ = self.scroll_offset
+        return Offset(
+            x + self._position_to_cell(self.cursor_position) - scroll_x,
+            y,
+        )
+
+    def _write_terminal_cursor(self, sequence: str) -> None:
+        if self.app.is_headless:
+            return
+        driver = getattr(self.app, "_driver", None)
+        if driver is None:
+            return
+        driver.write(sequence)
+        driver.flush()
+
+    def _on_focus(self, event) -> None:
+        super()._on_focus(event)
+        self.app.cursor_position = self.insertion_cursor_screen_offset
+        self._write_terminal_cursor(self._STEADY_BAR + self._SHOW_CURSOR)
+
+    def _on_blur(self, event) -> None:
+        super()._on_blur(event)
+        self._write_terminal_cursor(self._HIDE_CURSOR)
+
+    def _watch_selection(self, selection) -> None:
+        super()._watch_selection(selection)
+        self.app.cursor_position = self.insertion_cursor_screen_offset
 
     def render_line(self, y: int) -> Strip:
         if y != 0:
@@ -24,8 +62,6 @@ class ThinCursorInput(Input):
             content.stylize(
                 self.get_component_rich_style("input--placeholder")
             )
-            if self.has_focus and self._cursor_visible:
-                content = Text("│", self.CURSOR_BAR_STYLE, end="") + content
         else:
             content = self._value
             value_length = len(self.value)
@@ -48,22 +84,14 @@ class ThinCursorInput(Input):
                     end,
                 )
 
-            if self.has_focus and self._cursor_visible:
-                cursor = self.cursor_position
-                content = (
-                    content[:cursor]
-                    + Text("│", self.CURSOR_BAR_STYLE, end="")
-                    + content[cursor:]
-                )
-
         segments = list(
             console.render(
                 content,
-                options.update_width(self.content_width + 1),
+                options.update_width(self.content_width),
             )
         )
         strip = Strip(segments)
         scroll_x, _ = self.scroll_offset
-        strip = strip.crop(scroll_x, scroll_x + maximum_width + 1)
-        strip = strip.extend_cell_length(maximum_width + 1)
+        strip = strip.crop(scroll_x, scroll_x + maximum_width)
+        strip = strip.extend_cell_length(maximum_width)
         return strip.apply_style(self.rich_style)
