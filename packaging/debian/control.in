@@ -1,0 +1,12 @@
+Package: mdir-u
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: Jtlsun Chois
+Depends: python3 (>= 3.11), python3-venv, xdg-utils, poppler-utils, nano
+Homepage: https://github.com/jtl-sun/mdir-u
+Description: Fast dual-pane terminal file manager
+ mDIR-U provides keyboard- and mouse-friendly file management, previews,
+ safe background file operations, search, archives, and batch rename tools.
+

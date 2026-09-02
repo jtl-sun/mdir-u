@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=mDIR
+Comment=Dual-pane terminal file manager
+Exec=/usr/bin/u
+Icon=mdir-u
+Terminal=true
+Categories=Utility;FileManager;
+

@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+VERSION="@VERSION@"
+VENV=/opt/mdir-u/venv
+python3 -m venv "$VENV"
+"$VENV/bin/python" -m pip install --no-index --find-links=/usr/share/mdir-u/wheels "mdir-u[preview]==$VERSION"
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+fi

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+if [ "${1:-}" = "remove" ]; then
+    rm -rf /opt/mdir-u
+fi
+

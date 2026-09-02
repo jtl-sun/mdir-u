@@ -1,13 +1,32 @@
-# MDIR-U
+# mDIR-U
 
-**MDIR for Ubuntu. MDIR Universal.**
+**A fast, free dual-pane file manager for Ubuntu.** Classic MDIR speed,
+modern previews, safe file operations, and optional AI —
+built for Linux terminals and the Ubuntu desktop.
 
-MDIR-U is a fast, keyboard-oriented dual-pane file manager for Ubuntu and
-other Linux terminals. It combines the direct workflow of classic MDIR and
-Total Commander with large-directory performance, document preview, and an
-optional AI command panel.
+[![Latest release](https://img.shields.io/github/v/release/jtl-sun/mdir-u?label=Ubuntu)](https://github.com/jtl-sun/mdir-u/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
+[![Tests](https://github.com/jtl-sun/mdir-u/actions/workflows/ci.yml/badge.svg)](https://github.com/jtl-sun/mdir-u/actions)
 
-MDIR-U is a tribute to **Choi Jung Han**, developer of the legendary MDIR
+> **Free and open source.** Built so Ubuntu users can manage files quickly
+> without subscriptions, ads, or account registration.
+
+### Download for Ubuntu
+
+[**Download mDIR-U 2.23.15**](https://github.com/jtl-sun/mdir-u/releases/tag/v2.23.15)
+· [Windows version](https://github.com/jtl-sun/mdir-p)
+
+```bash
+git clone https://github.com/jtl-sun/mdir-u.git
+cd mdir-u
+./install_ubuntu.sh
+```
+
+Then open **mDIR** from the application menu or type `u` in a terminal.
+
+![mDIR dual-pane workflow](docs/assets/mdir-demo.gif)
+
+mDIR-U is a tribute to **Choi Jung Han**, developer of the legendary MDIR
 file manager from the DOS era.
 
 ## Highlights
