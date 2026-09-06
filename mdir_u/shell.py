@@ -25,6 +25,7 @@ class AIShellApp(legacy.MDir):
             "AI/File",
             show=True,
             priority=True,
+            id="mdir.ai",
         ),
     ]
 

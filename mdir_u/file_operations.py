@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
+from time import sleep
 from typing import Callable, Iterable, Literal
 
 
@@ -26,6 +27,7 @@ class FileOperationResult:
     recycled: int = 0
     permanently_deleted: int = 0
     completed_names: list[str] = field(default_factory=list)
+    completed_pairs: list[tuple[Path, Path]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -97,6 +99,7 @@ def run_file_operation(
     new_name: str | None = None,
     overwrite: bool = False,
     cancel_event: Event | None = None,
+    pause_event: Event | None = None,
     progress: ProgressCallback | None = None,
 ) -> FileOperationResult:
     """Run a batch file operation without touching any UI objects.
@@ -106,11 +109,17 @@ def run_file_operation(
     notifications before repainting.
     """
     paths = tuple(Path(item) for item in items)
+    if pause_event is None and cancel_event is not None:
+        pause_event = getattr(cancel_event, "mdir_pause_event", None)
     result = FileOperationResult(operation=operation, total=len(paths))
     if operation in {"copy", "move"} and destination is None:
         raise ValueError(f"{operation} requires a destination")
 
     for index, source in enumerate(paths, start=1):
+        while pause_event is not None and pause_event.is_set():
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            sleep(0.05)
         if cancel_event is not None and cancel_event.is_set():
             result.cancelled = True
             break
@@ -163,6 +172,7 @@ def run_file_operation(
                         _remove_existing_target(target)
                     shutil.move(str(source), str(target))
                 display_name = target_name
+                result.completed_pairs.append((source, target))
 
             result.completed += 1
             result.completed_names.append(display_name)

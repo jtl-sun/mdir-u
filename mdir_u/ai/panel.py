@@ -599,6 +599,13 @@ class AIPanel(Vertical):
         prompt = unicodedata.normalize("NFC", event.text).strip()
         if not prompt:
             return
+        if prompt.casefold().startswith(("/file", "/파일", "file:", "파일작업:")):
+            handler = getattr(self.app, "request_safe_ai_file_action", None)
+            if callable(handler):
+                event.editor.text = ""
+                self._append(f"\n[bold green]Safe file request[/]\n{escape(prompt)}")
+                handler(prompt)
+                return
         if self.activity_running or (
             self.process and self.process.poll() is None
         ):
