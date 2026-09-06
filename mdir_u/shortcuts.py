@@ -149,12 +149,18 @@ def expand_shortcut_text(
     left: Path,
     right: Path,
     project: Path,
+    selected: Path | None = None,
+    left_selected: Path | None = None,
+    right_selected: Path | None = None,
 ) -> str:
     """Expand MDIR placeholders and platform environment variables."""
     replacements = {
         "{current}": str(current),
         "{left}": str(left),
         "{right}": str(right),
+        "{selected}": str(selected or current),
+        "{left_selected}": str(left_selected or left),
+        "{right_selected}": str(right_selected or right),
         "{home}": str(Path.home()),
         "{project}": str(project),
     }

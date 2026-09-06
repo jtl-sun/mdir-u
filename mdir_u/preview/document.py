@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import csv
 import math
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import threading
 import zipfile
 from dataclasses import dataclass, field
@@ -46,10 +48,29 @@ EXCEL_EXTENSIONS = {
     ".xltm",
     ".xltx",
 }
-PREVIEW_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | EXCEL_EXTENSIONS
+TEXT_EXTENSIONS = {
+    ".cfg", ".conf", ".csv", ".htm", ".html", ".ini", ".json", ".log",
+    ".md", ".markdown", ".text", ".tsv", ".txt", ".xml", ".yaml", ".yml",
+}
+WORD_EXTENSIONS = {".doc", ".docx"}
+POWERPOINT_EXTENSIONS = {".ppt", ".pptx"}
+OFFICE_EXTENSIONS = WORD_EXTENSIONS | POWERPOINT_EXTENSIONS
+PREVIEW_EXTENSIONS = (
+    IMAGE_EXTENSIONS
+    | PDF_EXTENSIONS
+    | EXCEL_EXTENSIONS
+    | TEXT_EXTENSIONS
+    | OFFICE_EXTENSIONS
+)
 MAX_EXCEL_ROWS = 35
 MAX_EXCEL_COLUMNS = 12
 MAX_PREVIEW_SOURCE_PIXELS = 48_000_000
+MAX_TEXT_PREVIEW_BYTES = 1_048_576
+MAX_TEXT_PREVIEW_LINES = 80
+MAX_OFFICE_PREVIEW_PARAGRAPHS = 120
+MAX_OFFICE_FILE_BYTES = 256 * 1024 * 1024
+MAX_OFFICE_XML_BYTES = 8 * 1024 * 1024
+MAX_POWERPOINT_SLIDES = 80
 
 
 @dataclass(frozen=True)
@@ -551,6 +572,14 @@ def _excel_font(size: int, *, bold: bool = False):
             / "Fonts"
             / ("arialbd.ttf" if bold else "arial.ttf")
         ),
+        Path(
+            "/usr/share/fonts/opentype/noto/"
+            + ("NotoSansCJK-Bold.ttc" if bold else "NotoSansCJK-Regular.ttc")
+        ),
+        Path(
+            "/usr/share/fonts/truetype/dejavu/"
+            + ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")
+        ),
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -564,6 +593,8 @@ def _excel_font(size: int, *, bold: bool = False):
 def _draw_excel_grid(
     rows: list[list[str]],
     sheet_name: str,
+    *,
+    kind: str = "Excel",
 ):
     """Draw a bounded first-sheet sample as an Explorer-style grid."""
     from PIL import Image, ImageDraw
@@ -608,7 +639,7 @@ def _draw_excel_grid(
     draw.rectangle((0, 0, width, title_height), fill="#217346")
     draw.text(
         (16, 11),
-        f"Excel preview — {sheet_name}",
+        f"{kind} preview — {sheet_name}",
         font=title_font,
         fill="white",
     )
@@ -720,6 +751,272 @@ def _render_excel(path: Path):
     return image, "Excel", detail
 
 
+def _decode_preview_text(data: bytes) -> tuple[str, str]:
+    """Decode a bounded document sample without loading the complete file."""
+    for encoding, label in (
+        ("utf-8-sig", "UTF-8"),
+        ("utf-16", "UTF-16"),
+        ("cp949", "Korean CP949"),
+        ("cp1252", "Windows-1252"),
+    ):
+        try:
+            return data.decode(encoding), label
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    return data.decode("utf-8", errors="replace"), "UTF-8 (replaced)"
+
+
+def _wrap_preview_lines(text: str, *, width: int = 104) -> list[str]:
+    lines: list[str] = []
+    for raw_line in text.expandtabs(4).splitlines():
+        if len(lines) >= MAX_TEXT_PREVIEW_LINES:
+            break
+        wrapped = textwrap.wrap(
+            raw_line,
+            width=width,
+            replace_whitespace=False,
+            drop_whitespace=False,
+        ) or [""]
+        lines.extend(wrapped[: MAX_TEXT_PREVIEW_LINES - len(lines)])
+    return lines or ["(empty document)"]
+
+
+def _draw_text_document(
+    lines: list[str],
+    title: str,
+    *,
+    kind: str,
+):
+    """Render a bounded text sample into the existing image preview surface."""
+    from PIL import Image, ImageDraw
+
+    body_font = _excel_font(20)
+    title_font = _excel_font(23, bold=True)
+    line_height = 31
+    margin = 26
+    title_height = 58
+    width = 1_600
+    visible_lines = lines[:MAX_TEXT_PREVIEW_LINES]
+    height = min(
+        2_700,
+        title_height + margin + line_height * len(visible_lines),
+    )
+    image = Image.new("RGB", (width, max(180, height)), "#ffffff")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, width, title_height), fill="#315a86")
+    draw.text(
+        (18, 13),
+        f"{kind} preview — {title}",
+        font=title_font,
+        fill="white",
+    )
+    y = title_height + 18
+    for line in visible_lines:
+        if y + line_height > image.height:
+            break
+        draw.text((margin, y), line, font=body_font, fill="#202020")
+        y += line_height
+    return image
+
+
+def _render_text(path: Path):
+    size = path.stat().st_size
+    with path.open("rb") as stream:
+        data = stream.read(MAX_TEXT_PREVIEW_BYTES + 1)
+    truncated = len(data) > MAX_TEXT_PREVIEW_BYTES
+    text, encoding = _decode_preview_text(data[:MAX_TEXT_PREVIEW_BYTES])
+
+    suffix = path.suffix.lower()
+    if suffix in {".csv", ".tsv"}:
+        delimiter = "\t" if suffix == ".tsv" else ","
+        rows: list[list[str]] = []
+        reader = csv.reader(text.splitlines(), delimiter=delimiter)
+        for row in reader:
+            rows.append(row[:MAX_EXCEL_COLUMNS])
+            if len(rows) >= MAX_EXCEL_ROWS:
+                break
+        image = _draw_excel_grid(
+            _trim_excel_rows(rows),
+            path.name,
+            kind="CSV" if suffix == ".csv" else "TSV",
+        )
+        detail = (
+            f"{encoding} | first {len(rows):,} row(s)"
+            + (" | truncated" if truncated else "")
+        )
+        return image, "CSV" if suffix == ".csv" else "TSV", detail
+
+    kind_by_suffix = {
+        ".md": "Markdown",
+        ".markdown": "Markdown",
+        ".json": "JSON",
+        ".xml": "XML",
+        ".yaml": "YAML",
+        ".yml": "YAML",
+        ".html": "HTML",
+        ".htm": "HTML",
+    }
+    kind = kind_by_suffix.get(suffix, "Text")
+    lines = _wrap_preview_lines(text)
+    image = _draw_text_document(lines, path.name, kind=kind)
+    detail = (
+        f"{encoding} | {size:,} bytes | "
+        f"first {len(lines):,} display line(s)"
+        + (" | truncated" if truncated else "")
+    )
+    return image, kind, detail
+
+
+def _libreoffice_executable() -> Optional[str]:
+    """Find a free LibreOffice renderer without making it a dependency."""
+    for name in ("soffice", "libreoffice"):
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    if os.name == "nt":
+        for environment in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+            root = os.environ.get(environment)
+            if not root:
+                continue
+            candidate = (
+                Path(root) / "LibreOffice" / "program" / "soffice.exe"
+            )
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def _render_office_with_libreoffice(path: Path):
+    executable = _libreoffice_executable()
+    if not executable:
+        return None
+    with tempfile.TemporaryDirectory(prefix="mdir_office_preview_") as folder:
+        output_dir = Path(folder)
+        profile_dir = output_dir / "profile"
+        result = subprocess.run(
+            [
+                executable,
+                "--headless",
+                f"-env:UserInstallation={profile_dir.as_uri()}",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(output_dir),
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            startupinfo=_hidden_startup_info(),
+            creationflags=(
+                subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            ),
+        )
+        pdfs = sorted(output_dir.glob("*.pdf"))
+        if result.returncode != 0 or not pdfs:
+            message = (result.stderr or result.stdout).strip()
+            raise RuntimeError(
+                message or "LibreOffice could not prepare this document."
+            )
+        image, _, detail = _render_pdf(pdfs[0])
+        kind = (
+            "Word"
+            if path.suffix.lower() in WORD_EXTENSIONS
+            else "PowerPoint"
+        )
+        return image, kind, f"LibreOffice layout | {detail}"
+
+
+def _extract_docx_lines(path: Path) -> list[str]:
+    with zipfile.ZipFile(path) as archive:
+        member = archive.getinfo("word/document.xml")
+        if member.file_size > MAX_OFFICE_XML_BYTES:
+            raise RuntimeError("Word preview text is too large to render safely.")
+        root = ET.fromstring(archive.read(member))
+    lines: list[str] = []
+    for paragraph in root.findall(".//{*}p"):
+        value = "".join(
+            node.text or "" for node in paragraph.findall(".//{*}t")
+        )
+        if value.strip():
+            lines.append(value)
+        if len(lines) >= MAX_OFFICE_PREVIEW_PARAGRAPHS:
+            break
+    return lines or ["(empty Word document)"]
+
+
+def _slide_number(name: str) -> int:
+    match = re.search(r"slide(\d+)\.xml$", name)
+    return int(match.group(1)) if match else 0
+
+
+def _extract_pptx_lines(path: Path) -> tuple[list[str], int]:
+    lines: list[str] = []
+    with zipfile.ZipFile(path) as archive:
+        slide_names = sorted(
+            (
+                name
+                for name in archive.namelist()
+                if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)
+            ),
+            key=_slide_number,
+        )
+        for slide_index, slide_name in enumerate(
+            slide_names[:MAX_POWERPOINT_SLIDES], start=1
+        ):
+            member = archive.getinfo(slide_name)
+            if member.file_size > MAX_OFFICE_XML_BYTES:
+                raise RuntimeError(
+                    "PowerPoint slide text is too large to render safely."
+                )
+            root = ET.fromstring(archive.read(member))
+            slide_text = [
+                node.text.strip()
+                for node in root.findall(".//{*}t")
+                if node.text and node.text.strip()
+            ]
+            lines.append(f"Slide {slide_index}")
+            lines.extend(f"  {value}" for value in slide_text)
+            lines.append("")
+            if len(lines) >= MAX_OFFICE_PREVIEW_PARAGRAPHS:
+                break
+    return lines or ["(empty PowerPoint presentation)"], len(slide_names)
+
+
+def _render_office(path: Path):
+    if path.stat().st_size > MAX_OFFICE_FILE_BYTES:
+        raise RuntimeError(
+            "Office preview is limited to 256 MiB; use Open for this file."
+        )
+    converted = _render_office_with_libreoffice(path)
+    if converted is not None:
+        return converted
+
+    suffix = path.suffix.lower()
+    if suffix == ".docx":
+        lines = _wrap_preview_lines("\n".join(_extract_docx_lines(path)))
+        image = _draw_text_document(lines, path.name, kind="Word")
+        return (
+            image,
+            "Word",
+            "Text fallback | install LibreOffice for page layout",
+        )
+    if suffix == ".pptx":
+        extracted, slide_count = _extract_pptx_lines(path)
+        lines = _wrap_preview_lines("\n".join(extracted))
+        image = _draw_text_document(lines, path.name, kind="PowerPoint")
+        return (
+            image,
+            "PowerPoint",
+            f"{slide_count:,} slide(s) | text fallback | "
+            "install LibreOffice for slide layout",
+        )
+    raise RuntimeError(
+        "Legacy DOC/PPT preview needs the free LibreOffice application. "
+        "Install LibreOffice and select the file again."
+    )
+
+
 def prepare_document_source(
     path: Path,
     *,
@@ -736,6 +1033,10 @@ def prepare_document_source(
         image, kind, detail = _render_pdf(path)
     elif suffix in EXCEL_EXTENSIONS:
         image, kind, detail = _render_excel(path)
+    elif suffix in TEXT_EXTENSIONS:
+        image, kind, detail = _render_text(path)
+    elif suffix in OFFICE_EXTENSIONS:
+        image, kind, detail = _render_office(path)
     else:
         raise RuntimeError(f"Preview is not supported for {suffix or 'this file'}.")
     return DocumentSource(image=image, kind=kind, detail=detail)
@@ -792,7 +1093,7 @@ class DocumentPreviewPanel(Vertical):
         """Request the normal F3 full-screen viewer."""
 
     class OpenRequested(Message):
-        """Request opening the document with its Windows application."""
+        """Request opening the document with its default application."""
 
     DEFAULT_CSS = """
     DocumentPreviewPanel {
@@ -895,7 +1196,7 @@ class DocumentPreviewPanel(Vertical):
                 yield Button("Files", id="document_preview_close")
         with PreviewViewport(id="document_preview_scroll"):
             yield Static(
-                "Select an image, PDF, or Excel file in the left pane.",
+                "Select an image, PDF, Office, CSV, text, or Markdown file.",
                 id="document_preview_canvas",
             )
         yield Static(
@@ -1081,7 +1382,7 @@ class DocumentPreviewPanel(Vertical):
             )
         )
         self.query_one("#document_preview_info", Static).update(
-            "Preview failed | F3: full viewer | Open: default Windows app"
+            "Preview failed | F3: full viewer | Open: default application"
         )
         self.render_complete = True
 

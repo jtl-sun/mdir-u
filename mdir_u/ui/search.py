@@ -20,6 +20,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Label, Select, Static
 
 from .inputs import ThinCursorInput as Input
+from ..platform_support import open_with_default_app
 from textual.worker import Worker
 
 
@@ -319,7 +320,7 @@ def _display_file_size(size: int) -> str:
 
 
 class SearchResultsTable(DataTable):
-    """Result table that opens a path with one click or the Enter key."""
+    """Result table that launches a file with one click or the Enter key."""
 
 
 class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
@@ -584,7 +585,8 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
                     variant="primary",
                 )
                 yield Button("Stop", id="search_stop", disabled=True)
-                yield Button("Open location", id="search_open", disabled=True)
+                yield Button("Open", id="search_open", disabled=True)
+                yield Button("Location", id="search_location", disabled=True)
                 yield Button("Cancel", id="search_cancel")
             yield Static(
                 "Enter conditions and press Search.",
@@ -596,8 +598,8 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
                 id="search_results",
             )
             yield Static(
-                "Click a result or select it and press Enter to show its location. "
-                "Esc/X/Cancel: close",
+                "Click a file or press Enter to open it. "
+                "Location: show it in mDIR | Esc/X/Cancel: close",
                 id="search_result_help",
             )
 
@@ -611,6 +613,9 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
         self.query_one("#search_start", Button).disabled = running
         self.query_one("#search_stop", Button).disabled = not running
         self.query_one("#search_open", Button).disabled = (
+            running or not self.results
+        )
+        self.query_one("#search_location", Button).disabled = (
             running or not self.results
         )
 
@@ -848,25 +853,57 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
             return self.results[row]
         return None
 
-    def _open_result(self, row: Optional[int] = None) -> None:
+    def _selected_result_at(
+        self,
+        row: Optional[int] = None,
+    ) -> Optional[SearchResult]:
         if row is not None:
             table = self.query_one("#search_results", SearchResultsTable)
             if table.is_valid_row_index(row):
                 table.move_cursor(row=row, column=0)
-        result = self._selected_result()
+        return self._selected_result()
+
+    def _launch_result(self, row: Optional[int] = None) -> None:
+        result = self._selected_result_at(row)
+        if result is None:
+            return
+        if result.is_directory:
+            self.dismiss(result.path)
+            return
+        try:
+            opener = getattr(self.app, "open_external_path", None)
+            if callable(opener):
+                opener(result.path)
+            else:
+                open_with_default_app(result.path)
+            self.query_one("#search_status", Static).update(
+                f"Opened with the default application: {result.path}"
+            )
+        except Exception as exc:
+            self.query_one("#search_status", Static).update(
+                f"Could not open {result.path.name}: {exc}"
+            )
+
+    def _show_result_location(self, row: Optional[int] = None) -> None:
+        result = self._selected_result_at(row)
         if result is None:
             return
         self.dismiss(result.path)
 
     @on(DataTable.RowSelected, "#search_results")
     def result_entered(self, event: DataTable.RowSelected) -> None:
-        self._open_result()
+        self._launch_result()
         event.stop()
 
     @on(Button.Pressed, "#search_open")
     def open_clicked(self, event: Button.Pressed) -> None:
         event.stop()
-        self._open_result()
+        self._launch_result()
+
+    @on(Button.Pressed, "#search_location")
+    def location_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        self._show_result_location()
 
     def _close(self) -> None:
         self.cancel_event.set()

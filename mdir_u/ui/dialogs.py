@@ -200,17 +200,24 @@ class FileOperationProgressScreen(ModalScreen[None]):
         align-horizontal: right;
     }
 
-    #file_operation_cancel {
+    #file_operation_cancel, #file_operation_pause {
         min-width: 12;
         height: 3;
     }
     """
 
-    def __init__(self, operation: str, total: int, cancel_event: Event) -> None:
+    def __init__(
+        self,
+        operation: str,
+        total: int,
+        cancel_event: Event,
+        pause_event: Event,
+    ) -> None:
         super().__init__()
         self.operation = operation.title()
         self.total = total
         self.cancel_event = cancel_event
+        self.pause_event = pause_event
 
     def compose(self) -> ComposeResult:
         with Vertical(id="file_operation_dialog"):
@@ -225,6 +232,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
                 id="file_operation_progress",
             )
             with Horizontal(id="file_operation_actions"):
+                yield Button("Pause", id="file_operation_pause")
                 yield Button("Cancel", id="file_operation_cancel")
 
     def on_mount(self) -> None:
@@ -254,6 +262,21 @@ class FileOperationProgressScreen(ModalScreen[None]):
     def cancel_clicked(self, event: Button.Pressed) -> None:
         event.stop()
         self.request_cancel()
+
+    @on(Button.Pressed, "#file_operation_pause")
+    def pause_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        button = self.query_one("#file_operation_pause", Button)
+        if self.pause_event.is_set():
+            self.pause_event.clear()
+            button.label = "Pause"
+            self.app.set_status(f"{self.operation} resumed.")
+        else:
+            self.pause_event.set()
+            button.label = "Resume"
+            self.app.set_status(
+                f"{self.operation} will pause after the current item."
+            )
 
     def key_escape(self) -> None:
         self.request_cancel()

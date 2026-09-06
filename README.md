@@ -1,7 +1,7 @@
 # mDIR-U
 
 **A fast, free dual-pane file manager for Ubuntu.** Classic MDIR speed,
-modern previews, safe file operations, and optional AI —
+modern previews, safe file operations, and integrated AI —
 built for Linux terminals and the Ubuntu desktop.
 
 [![Latest release](https://img.shields.io/github/v/release/jtl-sun/mdir-u?label=Ubuntu)](https://github.com/jtl-sun/mdir-u/releases/latest)
@@ -13,7 +13,7 @@ built for Linux terminals and the Ubuntu desktop.
 
 ### Download for Ubuntu
 
-[**Download mDIR-U 2.23.29**](https://github.com/jtl-sun/mdir-u/releases/tag/v2.23.29)
+[**Download the latest stable mDIR-U**](https://github.com/jtl-sun/mdir-u/releases/latest)
 · [Windows version](https://github.com/jtl-sun/mdir-p)
 
 ```bash
@@ -36,7 +36,7 @@ file manager from the DOS era.
 - Compact overwrite warning before Copy or Move replaces a same-name item
 - Background directory scans that show the first 250 rows quickly, even in
   directories containing tens of thousands of files
-- Preview for images, PDF documents, and Excel workbooks
+- Preview for images, PDF, Excel, Word, PowerPoint, CSV, text, and Markdown
 - Safe text viewing with F3 and interactive nano editing with F4
 - Advanced filename and content search
 - Safe batch rename with find/delete and optional end numbering, plus secure
@@ -50,7 +50,7 @@ file manager from the DOS era.
 - Files below 10 GB and directories go to the Ubuntu Trash; files of 10 GB or
   more require permanent deletion
 - Ubuntu locations, mounted filesystem selection, and desktop opening
-- Optional Codex, Ollama, and local shell panel
+- Integrated Codex, Ollama, and local shell panel
 - Configurable top shortcut bar
 
 Preview is disabled at startup. Press `Ctrl+F3` to show or hide it.
@@ -146,13 +146,22 @@ This removes program files and launchers but preserves personal settings.
 | `F7` | Create directory |
 | `F8` | Delete |
 | `F9` | Select a location or mount |
-| `F10` | Quit |
+| `F10` | Open mDIR Options |
 | `F12` | Toggle AI/file pane |
 | `Ctrl+F` | Advanced search |
 | `Ctrl+F3` | Toggle document preview |
 | `Ctrl+H` | Toggle hidden files |
 | `Shift+F10` | Open a terminal at the selected directory |
 | `Alt+Enter` | Show item properties |
+
+The generic `Ctrl+P` command palette is disabled. Select **F10 Option** in the
+footer to open mDIR-U settings for **Keys**, **Links**, **Theme**, and **Help**.
+Use the arrow keys and Enter to select an item. **Help** opens this `README.md`
+inside mDIR-U's read-only Viewer. In **Keys**, navigation, opening, selection,
+and the Options key remain fixed; other file-operation, search, advanced-tool,
+sorting, AI, and Preview shortcuts can be changed. Duplicate shortcuts and
+keys reserved by essential actions are rejected. Changes are stored in
+`~/.config/mdir-u/keys.json` and take effect immediately.
 
 Copy, Move, and Delete run in a background worker. Large batches show progress
 and an ETA; press `Esc` or choose **Cancel** to close the progress dialog
@@ -176,13 +185,58 @@ arguments. MDIR-U stores these links in:
 
 Supported link types are `folder`, `file`, `program`, `web`, `command`, and
 `action`. Placeholders include `{home}`, `{project}`, `{current}`, `{left}`,
-and `{right}`.
+`{right}`, `{selected}`, `{left_selected}`, and `{right_selected}`. Program
+links can therefore send selected files to free external applications such as
+LibreOffice, Meld, GIMP, or VLC without adding their weight to mDIR-U.
+
+## Document Preview
+
+Preview stays disabled until `Ctrl+F3` is pressed and rendering runs in the
+background. DOCX and PPTX have a lightweight built-in text fallback. Install
+the free LibreOffice application only if page-accurate Office layout or legacy
+DOC/PPT preview is needed:
+
+```bash
+sudo apt install libreoffice
+```
+
+Clicking or pressing Enter on a file—including a search result—opens it with
+Ubuntu's default application. The search dialog's **Location** button instead
+returns to that file inside mDIR-U.
 
 ## AI and local shell
 
-The AI panel is optional. Install and authenticate each provider CLI
-separately. `Codex Local` and `Shell` use the current Linux account's direct
+The AI panel is a core mDIR-U feature but loads only after `F12`, keeping normal
+file browsing fast. Install and authenticate each provider CLI separately.
+`Codex Local` and `Shell` use the current Linux account's direct
 permissions, so review commands before running them.
+
+Type an explicit safe file request in the AI panel with `/file` or `/파일`,
+for example `/파일 선택한 파일을 오른쪽으로 복사`. mDIR-U turns it into a
+local plan and shows the operation, files, and destination in a separate
+approval dialog. Copy/Move/Rename/MkDir are recorded by Undo Center. Trash
+deletes are intentionally not restored automatically by mDIR-U.
+
+## Advanced lightweight tools
+
+The tools below load only when invoked, so normal terminal browsing stays
+fast. `mIndex` uses Python's built-in SQLite. Duplicate Finder hashes only
+equal-size candidates and optionally uses Pillow for visual image similarity.
+Folder comparison is read-only, while Safe Sync copies new or changed items
+from the active pane to the opposite pane without deleting destination items.
+Named Workspaces remember both folders and pane state. Macros record reviewed
+Copy/Move batches only and never overwrite an existing target automatically.
+
+| Key | Advanced action |
+| --- | --- |
+| `Ctrl+Shift+F` | Search `mIndex`; prefix the term with `!` to rebuild |
+| `Ctrl+Shift+D` | Find exact and visually similar duplicates |
+| `Ctrl+Shift+C` | Compare both current folder trees |
+| `Ctrl+Shift+Y` | Safe sync active pane to opposite pane |
+| `Ctrl+Z` | Undo Center |
+| `Ctrl+Shift+S/L` | Save/load a named Workspace |
+| `Ctrl+Shift+M` | Start/stop Copy/Move Macro recording |
+| `Ctrl+Alt+M` | Review and play a saved Macro |
 
 ## WSL notes
 

@@ -18,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Label, Static
 
 from .ui.inputs import ThinCursorInput as Input
+from .platform_support import open_with_default_app
 
 
 from . import __version__
@@ -1746,6 +1747,7 @@ class MDir(App):
     VIEWER_SCREEN = ViewerScreen
     TITLE = f"MDIR-U {VERSION}"
     SUB_TITLE = "Ubuntu and Universal Dual Pane File Manager"
+    ENABLE_COMMAND_PALETTE = False
 
     CSS = """
     Screen { background: black; }
@@ -1834,6 +1836,7 @@ class MDir(App):
     """
 
     BINDINGS = [
+        Binding("ctrl+q", "ignore", "", show=False, priority=True, system=True),
         Binding("tab", "switch_pane", "Pane", show=False),
         Binding("left", "focus_left", "Left", show=False),
         Binding("right", "focus_right", "Right", show=False),
@@ -1846,37 +1849,48 @@ class MDir(App):
         Binding("shift+end", "shift_select_end", "Select to Bottom", show=False, priority=True),
         Binding("shift+pageup", "shift_select_page_up", "Select Page Up", show=False, priority=True),
         Binding("shift+pagedown", "shift_select_page_down", "Select Page Down", show=False, priority=True),
-        Binding("f2", "rename", "Rename"),
-        Binding("ctrl+f2", "batch_rename", "Batch Rename", show=False),
-        Binding("f3", "view", "View"),
-        Binding("f4", "edit", "Edit"),
-        Binding("f5", "copy", "Copy"),
-        Binding("f6", "move", "Move"),
-        Binding("alt+f5", "compress_zip", "ZIP", show=False),
-        Binding("alt+f6", "extract_zip", "Unzip", show=False),
-        Binding("f7", "mkdir", "MkDir"),
-        Binding("f8", "delete", "Delete"),
-        Binding("delete", "delete", "Delete", show=False),
-        Binding("f9", "drive", "Drive"),
-        Binding("f10", "quit", "Quit"),
-        Binding("ctrl+f", "search", "Find", show=False),
-        Binding("ctrl+n", "sort_name", "Name sort", show=False),
-        Binding("ctrl+e", "sort_ext", "Ext sort", show=False),
-        Binding("ctrl+s", "sort_size", "Size sort", show=False),
-        Binding("ctrl+d", "sort_date", "Modified sort", show=False),
-        Binding("ctrl+r", "refresh_all", "Refresh", show=False),
-        Binding("f11", "refresh_drives", "Refresh Drives", show=False),
-        Binding("ctrl+h", "hidden_system", "Hidden/System", show=False),
-        Binding("ctrl+w", "column_widths", "Column widths", show=False),
-        Binding("ctrl+shift+w", "reset_column_widths", "Reset widths", show=False),
-        # Ctrl+P belongs to Textual's command palette.  Keeping Properties on
-        # Alt+Enter avoids shadowing that built-in application command.
-        Binding("alt+enter", "properties", "Properties", show=False),
-        Binding("ctrl+g", "folder_size", "Folder size", show=False),
-        Binding("shift+f10", "powershell_here", "Terminal", show=False),
-        Binding("alt+f1", "drive_left", "Left drive", show=False),
-        Binding("alt+f2", "drive_right", "Right drive", show=False),
+        Binding("f2", "rename", "Rename", id="mdir.rename"),
+        Binding("ctrl+f2", "batch_rename", "Batch Rename", show=False, id="mdir.batch_rename"),
+        Binding("f3", "view", "View", id="mdir.view"),
+        Binding("f4", "edit", "Edit", id="mdir.edit"),
+        Binding("f5", "copy", "Copy", id="mdir.copy"),
+        Binding("f6", "move", "Move", id="mdir.move"),
+        Binding("alt+f5", "compress_zip", "ZIP", show=False, id="mdir.compress_zip"),
+        Binding("alt+f6", "extract_zip", "Unzip", show=False, id="mdir.extract_zip"),
+        Binding("f7", "mkdir", "MkDir", id="mdir.mkdir"),
+        Binding("f8", "delete", "Delete", id="mdir.delete"),
+        Binding("delete", "delete", "Delete", show=False, id="mdir.delete_alias"),
+        Binding("f9", "drive", "Drive", id="mdir.drive"),
+        Binding("f10", "options", "Option"),
+        Binding("ctrl+f", "search", "Find", show=False, id="mdir.search"),
+        Binding("ctrl+shift+f", "mindex", "mIndex", show=False, id="mdir.mindex"),
+        Binding("ctrl+shift+d", "find_duplicates", "Duplicates", show=False, id="mdir.duplicates"),
+        Binding("ctrl+shift+c", "compare_folders", "Compare", show=False, id="mdir.compare"),
+        Binding("ctrl+shift+y", "safe_sync", "Safe sync", show=False, id="mdir.safe_sync"),
+        Binding("ctrl+shift+m", "toggle_macro_recording", "Record macro", show=False, id="mdir.record_macro"),
+        Binding("ctrl+alt+m", "play_macro", "Play macro", show=False, id="mdir.play_macro"),
+        Binding("ctrl+z", "undo_last", "Undo", show=False, id="mdir.undo"),
+        Binding("ctrl+shift+s", "save_workspace", "Save workspace", show=False, id="mdir.save_workspace"),
+        Binding("ctrl+shift+l", "load_workspace", "Load workspace", show=False, id="mdir.load_workspace"),
+        Binding("ctrl+n", "sort_name", "Name sort", show=False, id="mdir.sort_name"),
+        Binding("ctrl+e", "sort_ext", "Ext sort", show=False, id="mdir.sort_ext"),
+        Binding("ctrl+s", "sort_size", "Size sort", show=False, id="mdir.sort_size"),
+        Binding("ctrl+d", "sort_date", "Modified sort", show=False, id="mdir.sort_date"),
+        Binding("ctrl+r", "refresh_all", "Refresh", show=False, id="mdir.refresh"),
+        Binding("f11", "refresh_drives", "Refresh Drives", show=False, id="mdir.refresh_drives"),
+        Binding("ctrl+h", "hidden_system", "Hidden/System", show=False, id="mdir.hidden_system"),
+        Binding("ctrl+w", "column_widths", "Column widths", show=False, id="mdir.column_widths"),
+        Binding("ctrl+shift+w", "reset_column_widths", "Reset widths", show=False, id="mdir.reset_widths"),
+        Binding("alt+enter", "properties", "Properties", show=False, id="mdir.properties"),
+        Binding("ctrl+g", "folder_size", "Folder size", show=False, id="mdir.folder_size"),
+        Binding("shift+f10", "powershell_here", "Terminal", show=False, id="mdir.terminal"),
+        Binding("alt+f1", "drive_left", "Left location", show=False, id="mdir.drive_left"),
+        Binding("alt+f2", "drive_right", "Right location", show=False, id="mdir.drive_right"),
     ]
+
+    def action_ignore(self) -> None:
+        """Deliberately suppress the framework's generic Ctrl+Q command."""
+        return None
 
     def __init__(self) -> None:
         super().__init__()
@@ -2410,15 +2424,14 @@ class MDir(App):
             return
 
         try:
-            if os.name == "nt":
-                os.startfile(str(path))
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(path)])
-            else:
-                subprocess.Popen(["xdg-open", str(path)])
+            self.open_external_path(path)
             self.set_status(f"Opened: {path.name}")
         except Exception as exc:
             self.set_status(f"Open failed: {exc}")
+
+    def open_external_path(self, path: Path) -> None:
+        """Open a file through the operating system's default application."""
+        open_with_default_app(path)
 
     def action_open_item(self) -> None:
         self._open_from_pane(self.active)
@@ -2469,6 +2482,9 @@ class MDir(App):
                 self.active.refresh_listing(keep_name=target.name)
                 self.passive.refresh_listing()
                 self.set_status(f"Renamed: {path.name} -> {target.name}")
+                recorder = getattr(self, "record_operation", None)
+                if callable(recorder):
+                    recorder("rename", ((path, target),))
             except Exception as exc:
                 self.set_status(f"Rename failed: {exc}")
 
@@ -2606,6 +2622,9 @@ class MDir(App):
                 new_dir.mkdir(parents=False, exist_ok=False)
                 self.active.refresh_listing(keep_name=name)
                 self.set_status(f"Created directory: {name}")
+                recorder = getattr(self, "record_operation", None)
+                if callable(recorder):
+                    recorder("mkdir", ((new_dir, new_dir),))
             except Exception as exc:
                 self.set_status(f"MkDir failed: {exc}")
 

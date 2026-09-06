@@ -11,7 +11,7 @@ The build downloads dependencies once and embeds their wheels in the package.
 Installation is therefore offline and does not contact PyPI:
 
 ```bash
-sudo apt install ./dist/mdir-u_2.23.29_amd64.deb
+sudo apt install ./dist/mdir-u_2.26.2_amd64.deb
 u
 ```
 

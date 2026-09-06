@@ -18,8 +18,10 @@ from mdir_u.app import MDirApp
 from mdir_u.preview.native import (
     PaneLayout,
     WindowRectangle,
+    _NativePreviewWindow,
     calculate_pane_rectangle,
 )
+from mdir_u.preview.document import can_preview, prepare_document_source
 from mdir_u.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
 from mdir_u.shortcuts import (
     DEFAULT_SHORTCUTS,
@@ -30,6 +32,14 @@ from mdir_u.shortcuts import (
     parse_shortcuts,
     save_shortcuts,
 )
+from mdir_u.keymap import (
+    EDITABLE_DEFINITIONS,
+    FIXED_KEYS,
+    load_keymap,
+    save_keymap,
+    validate_keymap,
+)
+from mdir_u.ui.options import KeyManagerScreen, OptionsScreen
 from mdir_u.ui.shortcuts import ShortcutManagerScreen
 from mdir_u import core as legacy
 from mdir_u.ui.batch_rename import (
@@ -42,6 +52,7 @@ from mdir_u.ui.batch_rename import (
 from mdir_u.ui.search import (
     AdvancedSearchScreen,
     SearchRequest,
+    SearchResult,
     _display_file_size,
     search_files,
 )
@@ -89,7 +100,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.23.29")
+        self.assertEqual(__version__, "2.26.2")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
@@ -452,10 +463,123 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             with zipfile.ZipFile(archive) as opened:
                 self.assertEqual(opened.read("sample.txt"), b"new")
 
-    def test_application_shortcuts_do_not_shadow_command_palette(self) -> None:
+    def test_option_replaces_framework_palette_and_quit_bindings(self) -> None:
         actions = {binding.key: binding.action for binding in MDirApp.BINDINGS}
         self.assertNotIn("ctrl+p", actions)
+        self.assertFalse(MDirApp.ENABLE_COMMAND_PALETTE)
+        self.assertEqual(actions["ctrl+q"], "ignore")
+        self.assertEqual(actions["f10"], "options")
+        self.assertNotIn("quit", actions.values())
         self.assertEqual(actions["alt+enter"], "properties")
+
+    def test_editable_key_bindings_have_stable_ids(self) -> None:
+        bindings_by_id = {
+            binding.id: binding
+            for binding in MDirApp.BINDINGS
+            if binding.id is not None
+        }
+        for definition in EDITABLE_DEFINITIONS:
+            self.assertIn(definition.binding_id, bindings_by_id)
+            binding = bindings_by_id[definition.binding_id]
+            self.assertEqual(binding.action, definition.action)
+            self.assertEqual(binding.key, definition.default_key)
+
+    def test_custom_keys_reject_fixed_and_duplicate_shortcuts(self) -> None:
+        self.assertIn("tab", FIXED_KEYS)
+        with self.assertRaises(ValueError):
+            validate_keymap({"mdir.copy": "tab"})
+        with self.assertRaises(ValueError):
+            validate_keymap({
+                "mdir.copy": "ctrl+alt+x",
+                "mdir.move": "ctrl+alt+x",
+            })
+        self.assertEqual(
+            validate_keymap({"mdir.copy": "ctrl+alt+x"}),
+            {"mdir.copy": "ctrl+alt+x"},
+        )
+
+    def test_custom_keymap_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "keys.json"
+            save_keymap({"mdir.copy": "ctrl+alt+x"}, path)
+            self.assertEqual(
+                load_keymap(path),
+                {"mdir.copy": "ctrl+alt+x"},
+            )
+
+    async def test_options_opens_key_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    app.action_options()
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, OptionsScreen)
+                    await pilot.click("#option_keys")
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, KeyManagerScreen)
+                    self.assertGreater(
+                        app.screen.query_one("#key_table").row_count,
+                        40,
+                    )
+                    await pilot.press("escape")
+                    app.exit()
+            finally:
+                os.chdir(previous)
+
+    async def test_options_arrow_navigation_opens_readme_help(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    app.action_options()
+                    await pilot.pause()
+                    self.assertEqual(app.focused.id, "option_keys")
+                    self.assertEqual(
+                        {
+                            app.screen.query_one(f"#{button_id}").variant
+                            for button_id in app.screen.OPTION_IDS[:4]
+                        },
+                        {"default"},
+                    )
+                    await pilot.press("right")
+                    self.assertEqual(app.focused.id, "option_links")
+                    await pilot.press("down")
+                    self.assertEqual(app.focused.id, "option_help")
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, app.VIEWER_SCREEN)
+                    self.assertEqual(app.screen.path, app._readme_path())
+                    await pilot.press("escape")
+                    app.exit()
+            finally:
+                os.chdir(previous)
+
+    async def test_custom_key_replaces_default_binding_immediately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(120, 36)) as pilot:
+                    app.set_keymap({"mdir.copy": "ctrl+alt+x"})
+                    with patch.object(app, "action_copy") as copy_action:
+                        await pilot.press("ctrl+alt+x")
+                        await pilot.pause()
+                        copy_action.assert_called_once_with()
+                        await pilot.press("f5")
+                        await pilot.pause()
+                        copy_action.assert_called_once_with()
+                    app.exit()
+            finally:
+                os.chdir(previous)
 
     def test_zip_rejects_destination_inside_selected_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -881,8 +1005,62 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                         root,
                     )
                 )
+                result = SearchResult(
+                    path=root / "find-me.txt",
+                    is_directory=False,
+                    size=6,
+                    modified=0.0,
+                )
+                app.screen.results = [result]
+                table = app.screen.query_one("#search_results")
+                table.add_row("find-me.txt", "File", "6 B", "", str(root))
+                table.move_cursor(row=0, column=0)
+                with patch.object(app, "open_external_path") as opener:
+                    app.screen._launch_result()
+                opener.assert_called_once_with(result.path)
                 await pilot.press("escape")
                 app.exit()
+
+    def test_extended_document_preview_formats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown = root / "notes.md"
+            markdown.write_text("# Notes\n\nPreview text", encoding="utf-8")
+            csv_path = root / "report.csv"
+            csv_path.write_text("name,total\nAlpha,42\n", encoding="utf-8")
+            docx = root / "brief.docx"
+            with zipfile.ZipFile(docx, "w") as archive:
+                archive.writestr(
+                    "word/document.xml",
+                    '<w:document xmlns:w="urn:word"><w:body><w:p>'
+                    "<w:r><w:t>Project brief</w:t></w:r>"
+                    "</w:p></w:body></w:document>",
+                )
+            pptx = root / "slides.pptx"
+            with zipfile.ZipFile(pptx, "w") as archive:
+                archive.writestr(
+                    "ppt/slides/slide1.xml",
+                    '<p:sld xmlns:p="urn:presentation" xmlns:a="urn:drawing">'
+                    "<p:cSld><a:t>Quarterly review</a:t></p:cSld></p:sld>",
+                )
+
+            self.assertTrue(all(can_preview(path) for path in (
+                markdown, csv_path, docx, pptx,
+            )))
+            with patch(
+                "mdir_u.preview.document._libreoffice_executable",
+                return_value=None,
+            ):
+                expected = ((markdown, "Markdown"), (csv_path, "CSV"),
+                            (docx, "Word"), (pptx, "PowerPoint"))
+                for path, kind in expected:
+                    source = prepare_document_source(path)
+                    try:
+                        self.assertEqual(source.kind, kind)
+                        self.assertGreater(source.size[0], 0)
+                        self.assertGreater(source.size[1], 0)
+                    finally:
+                        source.close()
 
     async def test_batch_rename_screen_opens_for_marked_items(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1581,6 +1759,13 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(app.left.table.has_focus)
                     self.assertTrue(app.right.disabled)
 
+                    with patch("mdir_u.core.open_with_default_app") as opener:
+                        app.action_open_item()
+                    opener.assert_called_once_with(image)
+                    self.assertTrue(app.preview_enabled)
+                    self.assertFalse(app.preview_mode)
+                    self.assertFalse(app.right.disabled)
+
                     await pilot.pause(0.25)
                     app.action_toggle_preview()
                     await pilot.pause(0.05)
@@ -1630,6 +1815,23 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(rectangle.width, 800)
         self.assertGreater(rectangle.height, 700)
 
+    def test_native_preview_hides_before_external_open(self) -> None:
+        opened: list[Path] = []
+        withdrawn: list[bool] = []
+        window = object.__new__(_NativePreviewWindow)
+        window.path = Path("/tmp/report.xlsx")
+        window.visible = True
+        window.root = SimpleNamespace(
+            withdraw=lambda: withdrawn.append(True),
+        )
+        window.open_callback = opened.append
+
+        window.open_original()
+
+        self.assertFalse(window.visible)
+        self.assertEqual(withdrawn, [True])
+        self.assertEqual(opened, [window.path])
+
     def test_shortcut_configuration(self) -> None:
         values = [
             {"label": "Docs", "type": "folder", "target": "{home}\\Documents"},
@@ -1653,14 +1855,21 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(load_shortcuts(config_path), parsed)
 
         expanded = expand_shortcut_text(
-            "{project}|{current}|{left}|{right}",
+            "{project}|{current}|{left}|{right}|{selected}|"
+            "{left_selected}|{right_selected}",
             current=Path("C:/Current"),
             left=Path("C:/Left"),
             right=Path("D:/Right"),
             project=Path("S:/MDIR"),
+            selected=Path("C:/Current/report.pdf"),
+            left_selected=Path("C:/Left/source.txt"),
+            right_selected=Path("D:/Right/target.txt"),
         )
         self.assertIn(str(Path("S:/MDIR")), expanded)
         self.assertIn(str(Path("C:/Current")), expanded)
+        self.assertIn(str(Path("C:/Current/report.pdf")), expanded)
+        self.assertIn(str(Path("C:/Left/source.txt")), expanded)
+        self.assertIn(str(Path("D:/Right/target.txt")), expanded)
 
 
 if __name__ == "__main__":

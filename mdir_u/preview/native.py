@@ -246,10 +246,12 @@ class NativePreviewController:
         self,
         app,
         *,
+        open_callback: Optional[Callable[[Path], None]] = None,
         full_view_callback: Optional[Callable[[], None]] = None,
         files_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         self.app = app
+        self.open_callback = open_callback
         self.full_view_callback = full_view_callback
         self.files_callback = files_callback
         self._commands: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -342,6 +344,10 @@ class NativePreviewController:
                 item = self._commands.get_nowait()
                 if item[0] not in {"show", "hide"}:
                     retained.append(item)
+                elif item[0] == "hide" and isinstance(
+                    item[1], threading.Event
+                ):
+                    item[1].set()
         except queue.Empty:
             pass
         for item in retained:
@@ -387,9 +393,12 @@ class NativePreviewController:
             self._commands.put(item)
         self._commands.put(("layout", pane_layout))
 
-    def hide(self) -> None:
+    def hide(self, *, wait: bool = False) -> None:
         if self._thread is not None:
-            self._replace_pending_show(("hide", None))
+            acknowledged = threading.Event() if wait else None
+            self._replace_pending_show(("hide", acknowledged))
+            if acknowledged is not None:
+                acknowledged.wait(timeout=0.5)
 
     def shutdown(self, *, timeout: float = 6.0) -> bool:
         """Stop Preview only after its Tk owner thread releases Tcl."""
@@ -446,6 +455,18 @@ class NativePreviewController:
         except Exception:
             pass
 
+    def _invoke_app_path_callback(
+        self,
+        callback: Optional[Callable[[Path], None]],
+        path: Path,
+    ) -> None:
+        if callback is None:
+            return
+        try:
+            self.app.call_from_thread(callback, path)
+        except Exception:
+            pass
+
     def _thread_main(self) -> None:
         window: Optional[_NativePreviewWindow] = None
         try:
@@ -453,6 +474,10 @@ class NativePreviewController:
                 self._commands,
                 terminal_hwnd=self._terminal_hwnd,
                 theme_palette=self._current_theme_palette(),
+                open_callback=lambda path: self._invoke_app_path_callback(
+                    self.open_callback,
+                    path,
+                ),
                 full_view_callback=lambda: self._invoke_app_callback(
                     self.full_view_callback
                 ),
@@ -487,6 +512,7 @@ class _NativePreviewWindow:
         *,
         terminal_hwnd: int,
         theme_palette: Optional[dict[str, str]] = None,
+        open_callback: Callable[[Path], None],
         full_view_callback: Callable[[], None],
         files_callback: Callable[[], None],
     ) -> None:
@@ -496,6 +522,7 @@ class _NativePreviewWindow:
         self.commands = commands
         self.terminal_hwnd = int(terminal_hwnd)
         self.pane_layout: Optional[PaneLayout] = None
+        self.open_callback = open_callback
         self.full_view_callback = full_view_callback
         self.files_callback = files_callback
         self.theme_palette = theme_palette or {
@@ -964,6 +991,7 @@ class _NativePreviewWindow:
         latest_layout = None
         latest_theme = None
         hide_requested = False
+        hide_acknowledgements: list[threading.Event] = []
         shutdown_requested = False
         try:
             while True:
@@ -974,6 +1002,8 @@ class _NativePreviewWindow:
                 elif command == "hide":
                     hide_requested = True
                     latest_show = None
+                    if isinstance(payload, threading.Event):
+                        hide_acknowledgements.append(payload)
                 elif command == "layout":
                     latest_layout = payload
                 elif command == "theme":
@@ -993,6 +1023,8 @@ class _NativePreviewWindow:
         if hide_requested:
             self.visible = False
             self.root.withdraw()
+        for acknowledged in hide_acknowledgements:
+            acknowledged.set()
         if latest_theme is not None:
             self._apply_theme_palette(latest_theme)
         if latest_layout is not None:
@@ -1136,7 +1168,7 @@ class _NativePreviewWindow:
             justify="center",
         )
         self.status_label.configure(
-            text="Use Open to view the file with its Windows application."
+            text="Use Open to view the file with its default application."
         )
 
     def _shutdown_background_threads(self) -> None:
@@ -1572,11 +1604,12 @@ class _NativePreviewWindow:
             self.fit()
 
     def open_original(self) -> None:
-        if self.path is not None and os.name == "nt":
-            try:
-                os.startfile(self.path)
-            except Exception:
-                pass
+        path = self.path
+        if path is None:
+            return
+        self.visible = False
+        self.root.withdraw()
+        self.open_callback(path)
 
     def _request_full_view(self) -> None:
         self.visible = False
