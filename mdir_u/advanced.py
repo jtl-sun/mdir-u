@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import time
+from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from threading import Event
@@ -195,172 +196,6 @@ def parse_safe_file_request(
 
 
 @dataclass(frozen=True)
-class OperationPair:
-    source: str
-    target: str
-    target_size: int | None = None
-    target_mtime_ns: int | None = None
-    target_signature: str | None = None
-
-
-def _tree_signature(path: Path) -> str:
-    """Fingerprint names and metadata, not file contents, for safe copy undo."""
-    digest = hashlib.sha256()
-    if path.is_file():
-        stat = path.stat()
-        digest.update(f"F\0{stat.st_size}\0{stat.st_mtime_ns}".encode())
-        return digest.hexdigest()
-    for directory, directories, files in os.walk(path):
-        base = Path(directory)
-        for name in sorted([*directories, *files], key=str.casefold):
-            child = base / name
-            stat = child.stat()
-            relative = child.relative_to(path)
-            kind = "D" if child.is_dir() else "F"
-            digest.update(
-                f"{kind}\0{relative}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode(
-                    "utf-8", errors="surrogatepass"
-                )
-            )
-    return digest.hexdigest()
-
-
-@dataclass
-class OperationRecord:
-    operation: str
-    pairs: list[OperationPair]
-    undoable: bool
-    note: str = ""
-    created_at: float = field(default_factory=time.time)
-    undone_at: float | None = None
-
-
-class OperationJournal:
-    """Persistent, conservative undo history for completed file operations."""
-
-    def __init__(self, path: Path, *, limit: int = 200) -> None:
-        self.path = path
-        self.limit = limit
-
-    def _load(self) -> list[OperationRecord]:
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            return [
-                OperationRecord(
-                    operation=item["operation"],
-                    pairs=[OperationPair(**pair) for pair in item.get("pairs", [])],
-                    undoable=bool(item.get("undoable")),
-                    note=str(item.get("note", "")),
-                    created_at=float(item.get("created_at", 0)),
-                    undone_at=item.get("undone_at"),
-                )
-                for item in raw
-            ]
-        except (OSError, ValueError, TypeError, KeyError):
-            return []
-
-    def _save(self, records: list[OperationRecord]) -> None:
-        _atomic_json_write(self.path, [asdict(item) for item in records[-self.limit :]])
-
-    def record(
-        self,
-        operation: str,
-        pairs: Iterable[tuple[Path, Path]],
-        *,
-        undoable: bool = True,
-        note: str = "",
-    ) -> OperationRecord:
-        saved_pairs: list[OperationPair] = []
-        for source, target in pairs:
-            size = mtime = None
-            signature = None
-            try:
-                if target.exists():
-                    stat = target.stat()
-                    size, mtime = stat.st_size, stat.st_mtime_ns
-                    signature = _tree_signature(target)
-            except OSError:
-                pass
-            saved_pairs.append(
-                OperationPair(str(source), str(target), size, mtime, signature)
-            )
-        record = OperationRecord(operation, saved_pairs, undoable, note)
-        records = self._load()
-        records.append(record)
-        self._save(records)
-        return record
-
-    def latest_undoable(self) -> OperationRecord | None:
-        return next(
-            (item for item in reversed(self._load()) if item.undoable and item.undone_at is None),
-            None,
-        )
-
-    @staticmethod
-    def describe(record: OperationRecord) -> str:
-        names = ", ".join(Path(pair.target).name for pair in record.pairs[:3])
-        if len(record.pairs) > 3:
-            names += f" (+{len(record.pairs) - 3})"
-        return f"{record.operation.title()} {len(record.pairs)} item(s): {names}"
-
-    def undo(self, record: OperationRecord) -> list[str]:
-        """Undo only when current filesystem state still matches the journal."""
-        errors: list[str] = []
-        for pair in reversed(record.pairs):
-            source, target = Path(pair.source), Path(pair.target)
-            try:
-                if record.operation == "copy":
-                    if not target.exists():
-                        continue
-                    if target.is_file() and pair.target_size is not None:
-                        stat = target.stat()
-                        if (stat.st_size, stat.st_mtime_ns) != (
-                            pair.target_size,
-                            pair.target_mtime_ns,
-                        ):
-                            raise RuntimeError("copied file was modified; kept it")
-                        target.unlink()
-                    elif target.is_dir():
-                        try:
-                            target.rmdir()
-                        except OSError:
-                            if pair.target_signature != _tree_signature(target):
-                                raise RuntimeError(
-                                    "copied folder contents were modified; kept it"
-                                )
-                            shutil.rmtree(target)
-                    else:
-                        raise RuntimeError("unsupported copied item")
-                elif record.operation in {"move", "rename"}:
-                    if not target.exists() and source.exists():
-                        continue
-                    if source.exists():
-                        raise RuntimeError("original path is already occupied")
-                    if not target.exists():
-                        raise RuntimeError("moved item no longer exists")
-                    source.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(target), str(source))
-                elif record.operation == "mkdir":
-                    target.rmdir()
-                else:
-                    raise RuntimeError("this operation cannot be undone safely")
-            except Exception as exc:
-                errors.append(f"{target.name}: {exc}")
-        if not errors:
-            records = self._load()
-            for item in reversed(records):
-                if (
-                    item.created_at == record.created_at
-                    and item.operation == record.operation
-                    and item.undone_at is None
-                ):
-                    item.undone_at = time.time()
-                    break
-            self._save(records)
-        return errors
-
-
-@dataclass(frozen=True)
 class IndexedHit:
     path: Path
     size: int
@@ -400,48 +235,91 @@ class FileIndex:
         cancel_event: Event | None = None,
         progress: Callable[[int, str], None] | None = None,
     ) -> int:
+        """Rebuild one root without exposing a partial index or large RAM buffer."""
         root = root.resolve()
-        rows: list[tuple[str, str, str, int, float, int]] = []
+        root_text = str(root)
         stack = [root]
         count = 0
-        while stack:
-            if cancel_event and cancel_event.is_set():
-                break
-            directory = stack.pop()
-            try:
-                entries = list(os.scandir(directory))
-            except (OSError, PermissionError):
-                continue
-            for entry in entries:
-                if cancel_event and cancel_event.is_set():
-                    break
-                try:
-                    stat = entry.stat(follow_symlinks=False)
-                    is_directory = entry.is_dir(follow_symlinks=False)
-                except OSError:
-                    continue
-                path = Path(entry.path)
-                rows.append(
-                    (str(root), str(path), entry.name, stat.st_size, stat.st_mtime, int(is_directory))
-                )
-                if is_directory and not entry.is_symlink():
-                    stack.append(path)
-                count += 1
-                if progress and count % 500 == 0:
-                    progress(count, str(directory))
-        with self._connect() as connection:
-            connection.execute("DELETE FROM files WHERE root = ?", (str(root),))
-            connection.executemany(
-                "INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?, ?, ?)", rows
-            )
+        batch: list[tuple[str, str, str, int, float, int]] = []
+
+        # Stage rows in SQLite's temporary database. This keeps the previous
+        # persistent index readable until the new scan has finished and avoids
+        # holding every indexed path in Python memory on very large trees.
+        with closing(self._connect()) as connection:
             connection.execute(
-                "INSERT OR REPLACE INTO indexed_roots VALUES (?, ?)",
-                (str(root), time.time()),
+                "CREATE TEMP TABLE staged_files ("
+                "root TEXT NOT NULL, path TEXT NOT NULL, name TEXT NOT NULL, "
+                "size INTEGER NOT NULL, modified REAL NOT NULL, "
+                "is_directory INTEGER NOT NULL)"
             )
+
+            def flush_batch() -> None:
+                if not batch:
+                    return
+                connection.executemany(
+                    "INSERT INTO staged_files VALUES (?, ?, ?, ?, ?, ?)", batch
+                )
+                batch.clear()
+
+            while stack:
+                if cancel_event and cancel_event.is_set():
+                    connection.rollback()
+                    return 0
+                directory = stack.pop()
+                try:
+                    with os.scandir(directory) as scan:
+                        for entry in scan:
+                            if cancel_event and cancel_event.is_set():
+                                connection.rollback()
+                                return 0
+                            try:
+                                stat = entry.stat(follow_symlinks=False)
+                                is_directory = entry.is_dir(follow_symlinks=False)
+                            except OSError:
+                                continue
+                            path = Path(entry.path)
+                            batch.append(
+                                (
+                                    root_text,
+                                    str(path),
+                                    entry.name,
+                                    stat.st_size,
+                                    stat.st_mtime,
+                                    int(is_directory),
+                                )
+                            )
+                            if is_directory and not entry.is_symlink():
+                                stack.append(path)
+                            count += 1
+                            if len(batch) >= 1_000:
+                                flush_batch()
+                            if progress and count % 500 == 0:
+                                progress(count, str(directory))
+                except (OSError, PermissionError):
+                    continue
+
+            flush_batch()
+            try:
+                # Publish the staged tree in one transaction. If any database
+                # write fails, rollback restores the last known-good index.
+                connection.execute("DELETE FROM files WHERE root = ?", (root_text,))
+                connection.execute(
+                    "INSERT OR REPLACE INTO files "
+                    "SELECT root, path, name, size, modified, is_directory "
+                    "FROM staged_files"
+                )
+                connection.execute(
+                    "INSERT OR REPLACE INTO indexed_roots VALUES (?, ?)",
+                    (root_text, time.time()),
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
         return count
 
     def has_root(self, root: Path) -> bool:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT 1 FROM indexed_roots WHERE root = ?", (str(root.resolve()),)
             ).fetchone()
@@ -453,7 +331,7 @@ class FileIndex:
             return []
         clauses = " AND ".join("lower(name) LIKE ?" for _ in terms)
         parameters: list[object] = [str(root.resolve()), *[f"%{term}%" for term in terms], limit]
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 f"SELECT path, size, modified, is_directory FROM files "
                 f"WHERE root = ? AND {clauses} ORDER BY lower(name) LIMIT ?",
@@ -611,6 +489,34 @@ def compare_directories(left: Path, right: Path) -> list[CompareEntry]:
     return rows
 
 
+def _normalized_real_path(path: Path) -> str:
+    return os.path.normcase(os.path.realpath(os.path.abspath(path)))
+
+
+def _path_is_within(path: Path, parent: Path) -> bool:
+    candidate = _normalized_real_path(path)
+    root = _normalized_real_path(parent)
+    try:
+        return os.path.commonpath((candidate, root)) == root
+    except ValueError:
+        return False
+
+
+def _atomic_copy2(source: Path, target: Path) -> None:
+    """Copy one file and publish it atomically in the destination directory."""
+    temporary = target.with_name(
+        f".{target.name}.mdir-sync-{os.getpid()}-{time.time_ns()}.tmp"
+    )
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def safe_sync_directories(
     source: Path,
     destination: Path,
@@ -620,6 +526,15 @@ def safe_sync_directories(
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[list[tuple[Path, Path]], list[str]]:
     """Copy new/changed source files without deleting anything at destination."""
+    source = source.resolve(strict=False)
+    destination = destination.resolve(strict=False)
+    if source == destination:
+        return [], []
+    if _path_is_within(destination, source):
+        return [], [
+            "Destination is inside the source tree; sync was blocked to prevent recursive copying."
+        ]
+
     candidates = [
         entry
         for entry in entries
@@ -633,14 +548,30 @@ def safe_sync_directories(
         source_path = source / entry.relative
         target_path = destination / entry.relative
         try:
-            if entry.is_directory:
-                existed = target_path.exists()
+            if source_path.is_symlink():
+                raise RuntimeError("symbolic links are not synchronized automatically")
+
+            source_is_directory = source_path.is_dir()
+            target_exists = os.path.lexists(target_path)
+            if target_exists:
+                if target_path.is_symlink():
+                    raise RuntimeError(
+                        "destination is a symbolic link; kept it unchanged"
+                    )
+                target_is_directory = target_path.is_dir()
+                if source_is_directory != target_is_directory:
+                    raise RuntimeError(
+                        "file/folder type conflict; kept destination unchanged"
+                    )
+
+            if source_is_directory:
+                existed = target_exists
                 target_path.mkdir(parents=True, exist_ok=True)
                 if not existed:
                     completed.append((source_path, target_path))
             else:
                 target_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_path, target_path)
+                _atomic_copy2(source_path, target_path)
                 completed.append((source_path, target_path))
         except Exception as exc:
             errors.append(f"{entry.relative}: {exc}")

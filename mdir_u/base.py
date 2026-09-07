@@ -32,7 +32,6 @@ from .advanced import (
     FileMacro,
     MacroAction,
     MacroStore,
-    OperationJournal,
     Workspace,
     WorkspaceStore,
     advanced_data_dir,
@@ -221,7 +220,6 @@ class BaseApp(AIShellApp):
         self._file_operation_screen: FileOperationProgressScreen | None = None
         self._file_operation_queue: deque[QueuedFileOperation] = deque()
         data_dir = advanced_data_dir("mDIR-U")
-        self._operation_journal = OperationJournal(data_dir / "operations.json")
         self._workspace_store = WorkspaceStore(data_dir / "workspaces.json")
         self._macro_store = MacroStore(data_dir / "macros.json")
         self._macro_recording_name: str | None = None
@@ -262,9 +260,6 @@ class BaseApp(AIShellApp):
             )
             self.passive.refresh_listing()
             self.set_status(f"Renamed {len(changed)} item(s).")
-            self.record_operation(
-                "rename", ((pair.source, pair.target) for pair in changed)
-            )
 
         self.push_screen(BatchRenameScreen(items), rename_requested)
 
@@ -756,31 +751,12 @@ class BaseApp(AIShellApp):
             self._start_next_queued_operation()
             return
 
-        if result.completed_pairs:
-            self.record_operation(
-                result.operation,
-                result.completed_pairs,
-                undoable=not overwrite,
-                note=(
-                    "An existing target was overwritten, so automatic undo is disabled."
-                    if overwrite
-                    else ""
-                ),
-            )
-        elif result.operation == "delete" and result.completed:
-            self._operation_journal.record(
-                "delete",
-                (),
-                undoable=False,
-                note="Deleted items are managed by the operating-system Trash/Recycle Bin.",
-            )
-
         summary = (
             f"{result.operation.title()}: {result.completed:,} completed"
         )
         if result.operation == "delete":
             summary += (
-                f" ({result.recycled:,} trashed, "
+                f" ({result.recycled:,} recycled, "
                 f"{result.permanently_deleted:,} permanently deleted)"
             )
         if result.skipped:
@@ -809,45 +785,6 @@ class BaseApp(AIShellApp):
             queued.source_side,
             new_name=queued.new_name,
             overwrite=queued.overwrite,
-        )
-
-    def record_operation(
-        self,
-        operation: str,
-        pairs: object,
-        *,
-        undoable: bool = True,
-        note: str = "",
-    ) -> None:
-        self._operation_journal.record(
-            operation, pairs, undoable=undoable, note=note  # type: ignore[arg-type]
-        )
-
-    def action_undo_last(self) -> None:
-        record = self._operation_journal.latest_undoable()
-        if record is None:
-            self.set_status("Undo Center: no safe operation is available.")
-            return
-
-        def confirmed(ok: bool) -> None:
-            if not ok:
-                self.set_status("Undo cancelled.")
-                return
-            errors = self._operation_journal.undo(record)
-            self.left.refresh_listing()
-            self.right.refresh_listing()
-            if errors:
-                self.set_status(f"Undo stopped safely: {errors[0]}")
-                self.notify("\n".join(errors[:5]), title="Undo Center")
-            else:
-                self.set_status(f"Undone: {self._operation_journal.describe(record)}")
-
-        self.push_screen(
-            self.CONFIRM_SCREEN(
-                f"Undo this operation?\n\n{self._operation_journal.describe(record)}",
-                title="Undo Center",
-            ),
-            confirmed,
         )
 
     def action_save_workspace(self) -> None:
@@ -1082,15 +1019,56 @@ class BaseApp(AIShellApp):
         source, destination = self.active.current_path, self.passive.current_path
         source_side = self.active_side
         try:
+            source_real = os.path.normcase(os.path.realpath(os.path.abspath(source)))
+            destination_real = os.path.normcase(
+                os.path.realpath(os.path.abspath(destination))
+            )
+            if source_real == destination_real:
+                self.set_status("Safe sync: source and destination are the same folder.")
+                return
+            if os.path.commonpath((source_real, destination_real)) == source_real:
+                self.set_status(
+                    "Safe sync blocked: destination is inside the source folder."
+                )
+                return
+        except ValueError:
+            pass
+
+        self.set_status(f"Safe sync: comparing {source} -> {destination} ...")
+        self._prepare_safe_sync(source, destination, source_side)
+
+    @work(
+        thread=True,
+        exclusive=True,
+        group="mdir-safe-sync-compare",
+        exit_on_error=False,
+    )
+    def _prepare_safe_sync(
+        self, source: Path, destination: Path, source_side: str
+    ) -> None:
+        try:
             compared = compare_directories(source, destination)
         except Exception as exc:
-            self.set_status(f"Sync comparison failed: {exc}")
+            self.call_from_thread(self.set_status, f"Sync comparison failed: {exc}")
             return
         changes = [
-            item
-            for item in compared
-            if item.status in {"left-only", "different"}
+            item for item in compared if item.status in {"left-only", "different"}
         ]
+        self.call_from_thread(
+            self._confirm_safe_sync,
+            source,
+            destination,
+            changes,
+            source_side,
+        )
+
+    def _confirm_safe_sync(
+        self,
+        source: Path,
+        destination: Path,
+        changes: list[object],
+        source_side: str,
+    ) -> None:
         if not changes:
             self.set_status("Safe sync: destination is already up to date.")
             return
@@ -1134,8 +1112,6 @@ class BaseApp(AIShellApp):
         errors: list[str],
         source_side: str,
     ) -> None:
-        if pairs:
-            self.record_operation("copy", pairs, note="Safe folder sync")
         self.left.refresh_listing()
         self.right.refresh_listing()
         summary = f"Safe sync: {len(pairs):,} file(s) copied"
@@ -1178,7 +1154,6 @@ class BaseApp(AIShellApp):
                     if target.exists():
                         raise FileExistsError(f"'{target.name}' already exists")
                     source.rename(target)
-                    self.record_operation("rename", ((source, target),))
                     self.left.refresh_listing()
                     self.right.refresh_listing()
                     self.set_status(f"Safe AI rename completed: {target.name}")
@@ -1187,18 +1162,15 @@ class BaseApp(AIShellApp):
             elif plan.operation == "mkdir" and plan.destination is not None:
                 try:
                     plan.destination.mkdir(exist_ok=False)
-                    self.record_operation(
-                        "mkdir", ((plan.destination, plan.destination),)
-                    )
                     self.active.refresh_listing(keep_name=plan.destination.name)
                     self.set_status(f"Safe AI folder created: {plan.destination.name}")
                 except Exception as exc:
                     self.set_status(f"Safe AI folder creation failed: {exc}")
 
         warning = (
-            "\n\nDelete cannot be automatically restored by Undo Center."
+            "\n\nDelete uses the Ubuntu Trash when allowed."
             if plan.operation == "delete"
-            else "\n\nUndo Center will record the completed operation."
+            else "\n\nReview the paths carefully; mDIR does not provide automatic Undo."
         )
         self.push_screen(
             self.CONFIRM_SCREEN(

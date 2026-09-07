@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.26.3
+
+- Removed automatic Undo from mDIR-U. File safety now relies on explicit confirmation, Ubuntu Trash, conflict checks, and rollback-aware replacement rather than a second automatic filesystem mutation.
+- Blocked Copy and Move when a directory target is the source itself or lies inside the source tree.
+- Hardened Safe Sync against destination-inside-source recursion, symbolic links, and file/folder type conflicts; changed file replacement now uses a staged atomic publish.
+- Preserved the previous `mIndex` when a rebuild is cancelled and staged rebuild rows in SQLite before publishing them.
+- Protected approved Copy/Move overwrites with staging and rollback so a failed operation keeps the previous destination.
+- Moved Safe Sync comparison off the Textual UI thread before showing the confirmation dialog.
+- Optimized `install_ubuntu.sh` to reuse its private venv and pip cache, avoid forced reinstalls and repeated pip upgrades, and run `apt` only for missing system packages.
+- Added regression coverage for subtree operations, overwrite rollback, Safe Sync conflicts, and cancelled index rebuilds.
+
 ## 2.26.2
 
 - Replaced the generic `Ctrl+P` command palette and its Maximize, Quit, and

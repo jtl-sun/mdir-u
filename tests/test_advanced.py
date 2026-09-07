@@ -4,6 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from mdir_u.advanced import (
@@ -11,7 +12,6 @@ from mdir_u.advanced import (
     FileMacro,
     MacroAction,
     MacroStore,
-    OperationJournal,
     Workspace,
     WorkspaceStore,
     compare_directories,
@@ -39,46 +39,6 @@ class AdvancedFeatureTests(unittest.TestCase):
             )
             store.save(macro)
             self.assertEqual(store.get("daily"), macro)
-
-    def test_copy_move_and_rename_are_safely_undoable(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source, destination = root / "source", root / "destination"
-            source.mkdir()
-            destination.mkdir()
-            original = source / "report.txt"
-            original.write_text("report", encoding="utf-8")
-            result = run_file_operation("copy", (original,), destination)
-            journal = OperationJournal(root / "journal.json")
-            record = journal.record("copy", result.completed_pairs)
-            self.assertEqual(journal.undo(record), [])
-            self.assertFalse((destination / original.name).exists())
-
-            moved = run_file_operation("move", (original,), destination)
-            record = journal.record("move", moved.completed_pairs)
-            self.assertEqual(journal.undo(record), [])
-            self.assertTrue(original.exists())
-
-            renamed = source / "renamed.txt"
-            original.rename(renamed)
-            record = journal.record("rename", ((original, renamed),))
-            self.assertEqual(journal.undo(record), [])
-            self.assertTrue(original.exists())
-
-    def test_copy_undo_refuses_to_remove_modified_target(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source, destination = root / "a.txt", root / "out"
-            source.write_text("before", encoding="utf-8")
-            destination.mkdir()
-            result = run_file_operation("copy", (source,), destination)
-            journal = OperationJournal(root / "journal.json")
-            record = journal.record("copy", result.completed_pairs)
-            target = destination / source.name
-            time.sleep(0.002)
-            target.write_text("edited after copy", encoding="utf-8")
-            self.assertTrue(journal.undo(record))
-            self.assertTrue(target.exists())
 
     def test_pause_stops_between_top_level_items(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -119,6 +79,12 @@ class AdvancedFeatureTests(unittest.TestCase):
             index = FileIndex(root / "index.sqlite3")
             self.assertEqual(index.rebuild(left), 3)
             self.assertEqual(len(index.search(left, "quarter report")), 1)
+            # Every operation must release its SQLite handle. Windows refuses
+            # to rename/delete an open database, unlike many Unix systems.
+            database = root / "index.sqlite3"
+            moved_database = root / "index-closed.sqlite3"
+            database.replace(moved_database)
+            moved_database.replace(database)
             self.assertEqual(len(find_exact_duplicates(left)), 1)
             compared = compare_directories(left, right)
             pairs, errors = safe_sync_directories(left, right, compared)
@@ -137,21 +103,138 @@ class AdvancedFeatureTests(unittest.TestCase):
         self.assertEqual(plan.operation, "copy")
         self.assertEqual(plan.destination, Path("/right"))
 
-    def test_safe_sync_undo_removes_new_tree_only_when_unchanged(self) -> None:
+    def test_copy_and_move_block_directory_into_its_own_subtree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "source"
+            child = root / "child"
+            child.mkdir(parents=True)
+            (root / "file.txt").write_text("data", encoding="utf-8")
+
+            copied = run_file_operation("copy", (root,), child)
+            self.assertTrue(copied.errors)
+            self.assertFalse((child / root.name).exists())
+
+            moved = run_file_operation("move", (root,), child)
+            self.assertTrue(moved.errors)
+            self.assertTrue(root.exists())
+
+    def test_safe_sync_keeps_destination_on_file_folder_type_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             left, right = root / "left", root / "right"
-            (left / "sub").mkdir(parents=True)
+            left.mkdir()
             right.mkdir()
-            (left / "sub" / "new.txt").write_text("new", encoding="utf-8")
+            (left / "item").write_text("source-file", encoding="utf-8")
+            (right / "item").mkdir()
+            (right / "item" / "keep.txt").write_text("keep", encoding="utf-8")
+
             pairs, errors = safe_sync_directories(
                 left, right, compare_directories(left, right)
             )
-            self.assertFalse(errors)
-            journal = OperationJournal(root / "journal.json")
-            record = journal.record("copy", pairs)
-            self.assertEqual(journal.undo(record), [])
-            self.assertFalse((right / "sub").exists())
+            self.assertFalse(pairs)
+            self.assertTrue(any("type conflict" in error for error in errors))
+            self.assertTrue((right / "item" / "keep.txt").exists())
+            self.assertFalse((right / "item" / "item").exists())
+
+    def test_safe_sync_blocks_destination_inside_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            destination = source / "backup"
+            destination.mkdir(parents=True)
+            (source / "data.txt").write_text("data", encoding="utf-8")
+            pairs, errors = safe_sync_directories(
+                source, destination, compare_directories(source, destination)
+            )
+            self.assertFalse(pairs)
+            self.assertTrue(any("inside the source tree" in error for error in errors))
+
+    def test_cancelled_mindex_rebuild_preserves_previous_index(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            indexed = root / "files"
+            indexed.mkdir()
+            (indexed / "old.txt").write_text("old", encoding="utf-8")
+            index = FileIndex(root / "index.sqlite3")
+            self.assertEqual(index.rebuild(indexed), 1)
+
+            (indexed / "new.txt").write_text("new", encoding="utf-8")
+            cancel = threading.Event()
+            cancel.set()
+            self.assertEqual(index.rebuild(indexed, cancel_event=cancel), 0)
+            self.assertEqual(len(index.search(indexed, "old")), 1)
+            self.assertEqual(len(index.search(indexed, "new")), 0)
+
+    def test_failed_copy_overwrite_preserves_existing_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.txt"
+            destination = root / "out"
+            destination.mkdir()
+            source.write_text("new", encoding="utf-8")
+            target = destination / source.name
+            target.write_text("old", encoding="utf-8")
+
+            def fail_after_partial_copy(src, dst, *args, **kwargs):
+                Path(dst).write_text("partial", encoding="utf-8")
+                raise OSError("simulated copy failure")
+
+            with patch(
+                "mdir_u.file_operations.shutil.copy2",
+                side_effect=fail_after_partial_copy,
+            ):
+                result = run_file_operation(
+                    "copy", (source,), destination, overwrite=True
+                )
+
+            self.assertTrue(result.errors)
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            self.assertFalse(
+                any(".mdir-copy-" in path.name for path in destination.iterdir())
+            )
+
+    def test_failed_move_overwrite_restores_existing_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.txt"
+            destination = root / "out"
+            destination.mkdir()
+            source.write_text("new", encoding="utf-8")
+            target = destination / source.name
+            target.write_text("old", encoding="utf-8")
+
+            with patch(
+                "mdir_u.file_operations.shutil.move",
+                side_effect=OSError("simulated move failure"),
+            ):
+                result = run_file_operation(
+                    "move", (source,), destination, overwrite=True
+                )
+
+            self.assertTrue(result.errors)
+            self.assertTrue(source.exists())
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            self.assertFalse(
+                any(".mdir-backup-" in path.name for path in destination.iterdir())
+            )
+
+    def test_directory_copy_overwrite_replaces_instead_of_merging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_parent = root / "source-parent"
+            source = source_parent / "folder"
+            destination = root / "out"
+            target = destination / "folder"
+            source.mkdir(parents=True)
+            target.mkdir(parents=True)
+            (source / "new.txt").write_text("new", encoding="utf-8")
+            (target / "stale.txt").write_text("stale", encoding="utf-8")
+
+            result = run_file_operation(
+                "copy", (source,), destination, overwrite=True
+            )
+            self.assertFalse(result.errors)
+            self.assertTrue((target / "new.txt").exists())
+            self.assertFalse((target / "stale.txt").exists())
 
 
 if __name__ == "__main__":

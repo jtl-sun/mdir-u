@@ -11,18 +11,33 @@ APPLICATIONS_ROOT="$DATA_HOME/applications"
 ICON_SOURCE="$SCRIPT_DIR/mdir_u/assets/mdir.png"
 INSTALLED_ICON="$INSTALL_ROOT/mdir.png"
 DESKTOP_FILE="$APPLICATIONS_ROOT/mdir-u.desktop"
+SYSTEM_PACKAGES="python3 python3-venv python3-pip xdg-utils poppler-utils zenity nano"
 
 if command -v apt-get >/dev/null 2>&1; then
-    if [ "$(id -u)" -eq 0 ]; then
-        SUDO=""
-    elif command -v sudo >/dev/null 2>&1; then
-        SUDO="sudo"
+    MISSING_PACKAGES=""
+    if command -v dpkg-query >/dev/null 2>&1; then
+        for package in $SYSTEM_PACKAGES; do
+            if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q '^install ok installed$'; then
+                MISSING_PACKAGES="$MISSING_PACKAGES $package"
+            fi
+        done
     else
-        printf '%s\n' "sudo is required to install Ubuntu system packages." >&2
-        exit 1
+        MISSING_PACKAGES="$SYSTEM_PACKAGES"
     fi
-    $SUDO apt-get update
-    $SUDO apt-get install -y python3 python3-venv python3-pip xdg-utils poppler-utils zenity nano
+
+    if [ -n "$(printf '%s' "$MISSING_PACKAGES" | tr -d ' ')" ]; then
+        if [ "$(id -u)" -eq 0 ]; then
+            SUDO=""
+        elif command -v sudo >/dev/null 2>&1; then
+            SUDO="sudo"
+        else
+            printf '%s\n' "sudo is required to install missing Ubuntu system packages." >&2
+            exit 1
+        fi
+        $SUDO apt-get update
+        # Intentional word splitting: MISSING_PACKAGES contains package names only.
+        $SUDO apt-get install -y $MISSING_PACKAGES
+    fi
 fi
 
 python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || {
@@ -35,8 +50,10 @@ if [ ! -x "$VENV_ROOT/bin/python" ]; then
     python3 -m venv "$VENV_ROOT"
 fi
 
-"$VENV_ROOT/bin/python" -m pip install --upgrade pip
-"$VENV_ROOT/bin/python" -m pip install --no-cache-dir --force-reinstall "$SCRIPT_DIR[preview]"
+# Reuse the existing private venv and normal pip cache. Installing the newer
+# local source updates mDIR-U while already-satisfied Preview dependencies are
+# kept instead of being force-downloaded on every update.
+PIP_DISABLE_PIP_VERSION_CHECK=1 "$VENV_ROOT/bin/python" -m pip install "$SCRIPT_DIR[preview]"
 
 ln -sfn "$VENV_ROOT/bin/u" "$BIN_ROOT/u"
 ln -sfn "$VENV_ROOT/bin/U" "$BIN_ROOT/U"

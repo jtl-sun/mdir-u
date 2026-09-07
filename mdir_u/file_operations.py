@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
@@ -43,6 +44,16 @@ def _path_exists(path: Path) -> bool:
     return os.path.lexists(path)
 
 
+def _path_is_within(path: Path, parent: Path) -> bool:
+    """Return whether path resolves inside parent (including parent itself)."""
+    candidate = os.path.normcase(os.path.realpath(os.path.abspath(path)))
+    root = os.path.normcase(os.path.realpath(os.path.abspath(parent)))
+    try:
+        return os.path.commonpath((candidate, root)) == root
+    except ValueError:
+        return False
+
+
 def destination_conflicts(
     items: Iterable[Path],
     destination: Path,
@@ -68,6 +79,81 @@ def _remove_existing_target(path: Path) -> None:
         shutil.rmtree(path)
     else:
         path.unlink()
+
+
+def _temporary_sibling(path: Path, kind: str) -> Path:
+    """Return a unique hidden sibling path used for staging or rollback."""
+    while True:
+        candidate = path.with_name(
+            f".{path.name}.mdir-{kind}-{uuid.uuid4().hex}"
+        )
+        if not _path_exists(candidate):
+            return candidate
+
+
+def _copy_to_staging(source: Path, target: Path) -> Path:
+    """Finish a copy at a hidden sibling before publishing the target name."""
+    staging = _temporary_sibling(target, "copy")
+    try:
+        if source.is_dir() and not source.is_symlink():
+            shutil.copytree(source, staging)
+        else:
+            shutil.copy2(source, staging)
+        return staging
+    except Exception:
+        if _path_exists(staging):
+            _remove_existing_target(staging)
+        raise
+
+
+def _publish_staging(staging: Path, target: Path) -> str | None:
+    """Publish a staged copy and roll back the old target if publishing fails."""
+    backup: Path | None = None
+    if _path_exists(target):
+        backup = _temporary_sibling(target, "backup")
+        target.replace(backup)
+    try:
+        staging.replace(target)
+    except Exception:
+        try:
+            if _path_exists(target):
+                _remove_existing_target(target)
+        finally:
+            if backup is not None and _path_exists(backup):
+                backup.replace(target)
+        raise
+
+    if backup is not None and _path_exists(backup):
+        try:
+            _remove_existing_target(backup)
+        except Exception as exc:
+            return f"old target backup could not be removed ({backup.name}): {exc}"
+    return None
+
+
+def _move_with_rollback(source: Path, target: Path) -> str | None:
+    """Protect an approved existing target while moving a source over it."""
+    backup: Path | None = None
+    if _path_exists(target):
+        backup = _temporary_sibling(target, "backup")
+        target.replace(backup)
+    try:
+        shutil.move(str(source), str(target))
+    except Exception:
+        try:
+            if _path_exists(target):
+                _remove_existing_target(target)
+        finally:
+            if backup is not None and _path_exists(backup):
+                backup.replace(target)
+        raise
+
+    if backup is not None and _path_exists(backup):
+        try:
+            _remove_existing_target(backup)
+        except Exception as exc:
+            return f"old target backup could not be removed ({backup.name}): {exc}"
+    return None
 
 
 def should_permanently_delete(*, is_directory: bool, size: int) -> bool:
@@ -130,7 +216,8 @@ def run_file_operation(
                 is_directory = source.is_dir() and not source.is_symlink()
                 size = 0 if is_directory else int(source.stat().st_size)
                 if should_permanently_delete(
-                    is_directory=is_directory, size=size
+                    is_directory=is_directory,
+                    size=size,
                 ):
                     source.unlink()
                     result.permanently_deleted += 1
@@ -150,29 +237,35 @@ def run_file_operation(
                     if progress is not None:
                         progress(index, result.total, display_name)
                     continue
+                if (
+                    source.is_dir()
+                    and not source.is_symlink()
+                    and _path_is_within(target, source)
+                ):
+                    raise ValueError(
+                        f"Cannot {operation} a folder into itself or its own subfolder"
+                    )
                 target_exists = _path_exists(target)
                 if target_exists and not overwrite:
                     result.skipped += 1
                     if progress is not None:
                         progress(index, result.total, display_name)
                     continue
+                warning: str | None = None
                 if operation == "copy":
-                    if source.is_dir():
-                        if target_exists and (
-                            not target.is_dir() or target.is_symlink()
-                        ):
-                            _remove_existing_target(target)
-                        shutil.copytree(source, target, dirs_exist_ok=True)
-                    else:
-                        if target_exists and target.is_dir():
-                            _remove_existing_target(target)
-                        shutil.copy2(source, target)
+                    staging = _copy_to_staging(source, target)
+                    try:
+                        warning = _publish_staging(staging, target)
+                    except Exception:
+                        if _path_exists(staging):
+                            _remove_existing_target(staging)
+                        raise
                 else:
-                    if target_exists:
-                        _remove_existing_target(target)
-                    shutil.move(str(source), str(target))
+                    warning = _move_with_rollback(source, target)
                 display_name = target_name
                 result.completed_pairs.append((source, target))
+                if warning:
+                    result.errors.append(f"{source.name}: {warning}")
 
             result.completed += 1
             result.completed_names.append(display_name)

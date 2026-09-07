@@ -69,16 +69,16 @@ cd mdir-u
 
 The installer:
 
-- installs the required Ubuntu packages, including nano;
+- installs only missing required Ubuntu packages, including nano;
 - creates a private environment under `~/.local/share/mdir-u`;
-- installs all Preview dependencies;
+- installs missing Preview dependencies while reusing the existing venv and pip cache;
 - creates permanent `u`, `U`, and `mdir-u` commands;
 - adds `~/.local/bin` to your login PATH when necessary; and
 - adds **mDIR** to the Ubuntu application menu with its own icon.
 - verifies that the installed version exactly matches the downloaded source.
 
-The installer can be run again at any time. It safely updates the program and
-keeps personal settings.
+The installer can be run again at any time. It safely updates the program, reuses
+already-installed dependencies, and keeps personal settings.
 
 ### Update a Git installation
 
@@ -167,6 +167,10 @@ Copy, Move, and Delete run in a background worker. Large batches show progress
 and an ETA; press `Esc` or choose **Cancel** to close the progress dialog
 immediately and prevent another top-level item from starting.
 
+Copy/Move also block a directory from being copied or moved into itself or its
+own subtree. Approved overwrites are staged first, so a failed replacement can
+restore the previous destination instead of leaving it deleted.
+
 A fast second click within 0.75 seconds opens the item. A deliberate second
 click after 1.0–3.0 seconds starts Rename.
 
@@ -214,8 +218,9 @@ permissions, so review commands before running them.
 Type an explicit safe file request in the AI panel with `/file` or `/파일`,
 for example `/파일 선택한 파일을 오른쪽으로 복사`. mDIR-U turns it into a
 local plan and shows the operation, files, and destination in a separate
-approval dialog. Copy/Move/Rename/MkDir are recorded by Undo Center. Trash
-deletes are intentionally not restored automatically by mDIR-U.
+approval dialog. mDIR-U does not provide automatic Undo. Copy/Move/Rename/MkDir therefore rely
+on explicit review, overwrite confirmation, and rollback-aware file handling.
+Delete continues to use Ubuntu Trash whenever the item qualifies for Trash.
 
 ## Advanced lightweight tools
 
@@ -233,7 +238,6 @@ Copy/Move batches only and never overwrite an existing target automatically.
 | `Ctrl+Shift+D` | Find exact and visually similar duplicates |
 | `Ctrl+Shift+C` | Compare both current folder trees |
 | `Ctrl+Shift+Y` | Safe sync active pane to opposite pane |
-| `Ctrl+Z` | Undo Center |
 | `Ctrl+Shift+S/L` | Save/load a named Workspace |
 | `Ctrl+Shift+M` | Start/stop Copy/Move Macro recording |
 | `Ctrl+Alt+M` | Review and play a saved Macro |
