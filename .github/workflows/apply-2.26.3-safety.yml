@@ -1,0 +1,40 @@
+name: Apply mDIR-U 2.26.3 safety update
+
+on:
+  push:
+    branches:
+      - review/mdir-u-2.26.3-safety
+    paths:
+      - .github/workflows/apply-2.26.3-safety.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply reviewed source update
+        run: python tools/apply_mdir_u_263.py
+      - name: Run safety regression tests
+        run: python -m unittest tests.test_advanced -v
+      - name: Compile changed Python modules
+        run: python -m py_compile mdir_u/advanced.py mdir_u/base.py mdir_u/file_operations.py mdir_u/keymap.py
+      - name: Remove one-time update helpers
+        run: |
+          rm -rf tools/mdir_u_263_payload
+          rm -f tools/apply_mdir_u_263.py
+          rm -f .github/workflows/apply-2.26.3-safety.yml
+      - name: Commit reviewed 2.26.3 source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release mDIR-U 2.26.3 safety hardening"
+          git push origin HEAD:review/mdir-u-2.26.3-safety
