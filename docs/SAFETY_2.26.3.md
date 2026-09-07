@@ -11,4 +11,4 @@ This release removes automatic Undo and strengthens the filesystem operations th
 - Ubuntu Trash continues to use `gio trash` with no unsafe permanent-delete fallback.
 - `install_ubuntu.sh` reuses the private venv and pip cache and installs only missing Ubuntu system packages.
 
-The focused 2.26.3 safety regression suite covers subtree operations, overwrite rollback, Safe Sync conflicts, and cancelled index rebuilds.
+The focused 2.26.3 safety regression suite covers subtree operations, overwrite rollback, Safe Sync conflicts, and cancelled index rebuilds. The normal GitHub CI remains the release gate for package installation, self-check, the full test suite, and package build.
