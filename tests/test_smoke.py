@@ -94,13 +94,15 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(installer.stat().st_mode & 0o111)
         installer_text = installer.read_text(encoding="utf-8")
         self.assertIn('INSTALL_ROOT="$DATA_HOME/mdir-u"', installer_text)
-        self.assertIn("--force-reinstall", installer_text)
+        self.assertNotIn("--force-reinstall", installer_text)
+        self.assertNotIn("--no-cache-dir", installer_text)
+        self.assertIn("PIP_DISABLE_PIP_VERSION_CHECK=1", installer_text)
         self.assertIn("mdir-u.desktop", installer_text)
         self.assertIn("EXPECTED_VERSION", installer_text)
         self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.26.2")
+        self.assertEqual(__version__, "2.26.3")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
