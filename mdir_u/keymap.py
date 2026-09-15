@@ -22,6 +22,7 @@ class KeyDefinition:
 
 
 KEY_DEFINITIONS = (
+    KeyDefinition("Thumbnail / List", "toggle_thumbnail", "alt+t", False),
     KeyDefinition("Switch pane", "switch_pane", "tab", False),
     KeyDefinition("Left pane", "focus_left", "left", False),
     KeyDefinition("Right pane", "focus_right", "right", False),

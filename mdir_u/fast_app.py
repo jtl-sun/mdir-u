@@ -152,6 +152,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
 
     def _render_cached_rows(self, keep_name: str | None = None) -> None:
         """Render in one batch while reusing preformatted cell strings."""
+        self._thumbnail_revision = getattr(self, "_thumbnail_revision", 0) + 1
         rows, target_row = self._prepare_cached_rows(keep_name)
         if rows:
             self.table.add_rows(rows)
@@ -602,6 +603,8 @@ class FastFileManagerApp(EditablePathApp):
 
     def _poll_directory_changes(self) -> None:
         """Check both directory timestamps without blocking the UI thread."""
+        if not self.is_running or self._exit or len(self.screen_stack) != 1:
+            return
         if self._directory_poll_running:
             return
         self._directory_poll_running = True
@@ -715,7 +718,7 @@ class FastFileManagerApp(EditablePathApp):
         self.push_screen(
             AdvancedSearchScreen(
                 source_pane.current_path,
-                include_hidden_system=self.show_hidden_system,
+                include_hidden_system=self.active.show_hidden_system,
             ),
             result_selected,
         )
@@ -772,12 +775,10 @@ class FastFileManagerApp(EditablePathApp):
         pane = self.left if side == "left" else self.right
         try:
             if (
-                not self.show_hidden_system
+                not pane.show_hidden_system
                 and legacy.is_hidden_or_system(target)
             ):
-                self.show_hidden_system = True
-                self.left.show_hidden_system = True
-                self.right.show_hidden_system = True
+                pane.show_hidden_system = True
                 self.update_hidden_buttons()
 
             pane.current_path = containing_directory

@@ -259,3 +259,30 @@ python3 -m build
 
 MDIR-U is released under the [MIT License](LICENSE). Attribution and the
 license notice must be preserved when redistributing the software.
+
+
+## Thumbnails and selection (2.26.15)
+
+Use `Th` above either pane or `Alt+T` to switch that pane between file list and
+thumbnails. Both panes can show thumbnails independently. Ubuntu renders images
+inside the terminal using color character cells; no external X11/Wayland overlay
+is required. Image detail depends on terminal dimensions and color support.
+
+`Tab` switches panes; arrow keys navigate tiles. `Enter` opens the current item,
+`Space` marks it, and the mouse wheel scrolls. Hold the right mouse button and drag
+to toggle a continuous range; crossing an item again during the same drag does
+not toggle it twice. Hold at the upper/lower edge to keep scrolling and selecting.
+The parent `..` is never marked.
+
+Each pane has right-aligned `*a` (Select All), `*-` (Deselect All), and `**`
+(Invert Selection) buttons. Marked items use teal backgrounds, white text and
+check marks. Selection is preserved when switching views and is used by the
+existing Copy/Move actions. `Sh`/`Hi` toggles hidden files only in that pane;
+`Ctrl+H` affects the active pane. Visibility settings are saved separately.
+
+The downloadable `.deb` is built and installation-tested on Ubuntu 24.04 amd64
+with Python 3.12 and bundled Python dependencies. Source installation remains
+available for other Linux environments with Python 3.11 or newer. Some terminal
+emulators reserve modifier shortcuts or the right mouse button for their own
+menus; enable application mouse reporting/use a terminal that forwards these
+inputs to mDIR. Ubuntu uses the terminal's key input, not a global keyboard hook.

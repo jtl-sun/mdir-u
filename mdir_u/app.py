@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ctypes
 import inspect
@@ -20,6 +20,8 @@ from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from .fast_app import FastFileManagerApp, LargeDirectoryFilePane
 from . import __version__
+from .thumbnail_view import ThumbnailGrid
+from .core import load_config_data
 from .platform_support import (
     filesystem_usage_text,
     locations,
@@ -134,8 +136,17 @@ class MDirApp(FastFileManagerApp):
         height: 1fr;
         min-height: 0;
     }
+    .drive-bar .hidden-toggle, .drive-bar .thumbnail-button { width: 4; min-width: 4; height: 1; border: none; padding: 0; margin: 0; }
+    .drive-bar .thumbnail-on { background: $success; color: $background; }
+    .selection-spacer { width: 1fr; height: 1; }
+    .selection-actions { width: 12; min-width: 12; height: 1; margin-left: 2; }
+    .selection-actions Button { width: 4; min-width: 4; height: 1; border: none; padding: 0; margin: 0; text-style: bold; }
+    .selection-all { color: #e5a000; }
+    .selection-none { color: #eeeeee; }
+    .selection-invert { color: #ff5555; }
     """ + TOTAL_COMMANDER_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
+        Binding("alt+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
         Binding(
             "ctrl+f3",
             "toggle_preview",
@@ -158,10 +169,66 @@ class MDirApp(FastFileManagerApp):
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
         super().__init__()
+        self.thumbnail_modes = {"left": False, "right": False}
+        self.thumbnail_grids = {}
+        config = load_config_data()
+        self.pane_hidden = {side: bool(config.get(f"{side}_show_hidden_system", self.show_hidden_system)) for side in ("left", "right")}
         self.user_keymap = load_keymap()
         self.set_keymap(self.user_keymap)
         self.register_theme(TOTAL_COMMANDER_THEME)
         self.theme = THEME_NAME
+
+    def set_active(self, side, *, focus_table=True):
+        super().set_active(side, focus_table=False)
+        if focus_table:
+            grid = self.thumbnail_grids.get(side)
+            (grid if grid is not None and self.thumbnail_modes[side] else self.active.table).focus()
+
+    def check_action(self, action, parameters):
+        if action == 'toggle_thumbnail':
+            return len(self.screen_stack) == 1 and not (self.ai_mode and self.active_side == 'right')
+        return super().check_action(action, parameters)
+
+    def action_toggle_thumbnail(self):
+        self._toggle_thumbnail(self.active_side)
+
+    def on_app_blur(self, event):
+        super().on_app_blur(event)
+        for grid in self.thumbnail_grids.values():
+            grid.end_drag()
+
+    def _toggle_thumbnail(self, side):
+        if len(self.screen_stack) != 1 or (side == 'right' and self.ai_mode):
+            return
+        if self.preview_mode:
+            self._hide_document_preview(restore_right_focus=False)
+        self.preview_enabled = False
+        self.thumbnail_modes[side] = not self.thumbnail_modes[side]
+        self.thumbnail_grids[side].set_enabled(self.thumbnail_modes[side])
+        self.query_one(f'#{side}_thumbnail', Button).set_class(self.thumbnail_modes[side], 'thumbnail-on')
+        self.set_active(side)
+        self.set_status(f'{side.title()}: ' + ('Thumbnails | Right-drag: mark | Tab: pane | Alt+T: list' if self.thumbnail_modes[side] else 'File list'))
+
+    @on(Button.Pressed, '.thumbnail-button')
+    def thumbnail_button_pressed(self, event):
+        event.stop()
+        self._toggle_thumbnail(event.button.id.split('_')[0])
+
+    @on(Button.Pressed, '.selection-button')
+    def selection_button_pressed(self, event):
+        event.stop()
+        side, _, mode = event.button.id.split('_')
+        if len(self.screen_stack) != 1 or (side == 'right' and self.ai_mode):
+            return
+        if side == 'right' and self.preview_mode:
+            self._hide_document_preview(restore_right_focus=False)
+            self.preview_enabled = False
+        self.set_active(side)
+        if self.active.set_bulk_selection(mode):
+            self.thumbnail_grids[side].refresh()
+            self.set_status(f'{side.title()}: {len(self.active.marked):,} selected')
+        else:
+            self.set_status('Wait for the directory listing to finish.')
 
     @property
     def native_preview(self) -> "NativePreviewController":
@@ -234,7 +301,7 @@ class MDirApp(FastFileManagerApp):
                     "left",
                     self.left_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self.pane_hidden["left"],
                 )
 
             with Vertical(id="right_wrap", classes="pane-wrap"):
@@ -245,7 +312,7 @@ class MDirApp(FastFileManagerApp):
                     "right",
                     self.right_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self.pane_hidden["right"],
                 )
                 yield DocumentPreviewPanel(id="document_preview")
 
@@ -273,18 +340,29 @@ class MDirApp(FastFileManagerApp):
                 tooltip=f"Switch {label} pane to {text}",
             )
         yield Button(
-            "Hidden",
+            "Sh",
             id=f"{side}_hidden_toggle",
             classes="hidden-toggle",
             tooltip="Show or hide Hidden/System files",
         )
 
+        yield Button("Th", id=f"{side}_thumbnail", classes="thumbnail-button", tooltip=f"Thumbnail / List ({side})")
+        yield Static("", classes="selection-spacer")
+        with Horizontal(classes="selection-actions"):
+            for suffix, label, hint in (("all", "*a", "Select All"), ("none", "*-", "Deselect All"), ("invert", "**", "Invert Selection")):
+                yield Button(label, id=f"{side}_select_{suffix}", classes=f"selection-button selection-{suffix}", tooltip=f"{hint} ({side})")
+
     @property
     def document_preview(self) -> DocumentPreviewPanel:
         return self.query_one("#document_preview", DocumentPreviewPanel)
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         super().on_mount()
+        for side in ("left", "right"):
+            pane = self.left if side == "left" else self.right
+            grid = ThumbnailGrid(pane, id=f"{side}_thumbnails")
+            self.thumbnail_grids[side] = grid
+            await pane.mount(grid, before=pane.table)
         self._sync_shortcut_buttons()
         self.document_preview.disabled = True
         if os.name == "nt":
@@ -792,7 +870,7 @@ class MDirApp(FastFileManagerApp):
             self._native_preview.restore_terminal_focus()
         self.set_active("left")
         self.left.table.refresh()
-        self.left.table.focus()
+        self.set_active("left")
 
     def action_focus_right(self) -> None:
         if self.preview_mode:

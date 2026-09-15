@@ -40,6 +40,8 @@ class Workspace:
     active: Literal["left", "right"] = "left"
     show_hidden: bool = False
     saved_at: float = field(default_factory=time.time)
+    left_show_hidden: bool | None = None
+    right_show_hidden: bool | None = None
 
 
 class WorkspaceStore:

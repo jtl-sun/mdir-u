@@ -3,6 +3,9 @@ from __future__ import annotations
 from time import monotonic
 from typing import Optional
 
+from rich.style import Style
+from ..selection_style import MARK_BACKGROUND, MARK_FOREGROUND
+
 from textual import events
 from textual.binding import Binding
 
@@ -11,6 +14,24 @@ from .. import core as legacy
 
 class SlowRenameDataTable(legacy.MDirDataTable):
     """File table with Explorer/Commander-style slow-click rename."""
+
+    def _is_marked_row(self, row_index: int) -> bool:
+        pane = self._pane()
+        return (pane is not None and 0 <= row_index < len(pane.entries)
+                and pane.entries[row_index] is not None
+                and pane.entries[row_index] in pane.marked)
+
+    def _get_row_style(self, row_index: int, base_style: Style) -> Style:
+        style = super()._get_row_style(row_index, base_style)
+        if self._is_marked_row(row_index):
+            style += Style(color=MARK_FOREGROUND, bgcolor=MARK_BACKGROUND)
+        return style
+
+    def _render_cell(self, row_index, column_index, base_style, width, cursor=False, hover=False):
+        # Preserve the marked background under the mouse; the cursor still
+        # uses the brighter CSS highlight. Cell metadata remains unchanged.
+        return super()._render_cell(row_index, column_index, base_style, width,
+                                    cursor=cursor, hover=hover and not self._is_marked_row(row_index))
 
     BINDINGS = [
         binding
