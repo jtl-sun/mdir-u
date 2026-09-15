@@ -844,7 +844,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     "left",
                 )
                 for _ in range(100):
-                    if not app._archive_busy:
+                    if (not app._archive_busy and app.left.initial_listing_complete
+                            and app.right.initial_listing_complete):
                         break
                     await pilot.pause(0.02)
 
@@ -884,7 +885,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     "left",
                 )
                 for _ in range(100):
-                    if not app._archive_busy:
+                    if (not app._archive_busy and app.left.initial_listing_complete
+                            and app.right.initial_listing_complete):
                         break
                     await pilot.pause(0.02)
 
@@ -1874,3 +1876,4 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
