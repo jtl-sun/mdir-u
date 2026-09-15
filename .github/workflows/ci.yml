@@ -36,7 +36,7 @@ jobs:
         run: |
           bash packaging/debian/build_deb.sh
           sudo apt-get install -y ./dist/mdir-u_*_amd64.deb
-          /opt/mdir-u/venv/bin/python -m mdir_u --check
+          /opt/mdir-u/venv/bin/python -P -m mdir_u --check
       - name: Package source and checksums
         run: python tools/package_release.py
       - uses: actions/upload-artifact@v4
@@ -66,3 +66,4 @@ jobs:
             exit 0
           fi
           gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "mDIR-U $version" --notes-file RELEASE_NOTES.md
+
