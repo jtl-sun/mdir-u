@@ -455,6 +455,24 @@ class EditablePathFilePane(BaseFilePane):
         self.update_info()
         self.update_summary()
 
+    def set_bulk_selection(self, mode: str) -> bool:
+        """Mark the displayed directory in one pass, without rescanning it."""
+        if mode not in {'all', 'none', 'invert'}:
+            raise ValueError(f'Unknown selection mode: {mode}')
+        if not getattr(self, 'initial_listing_complete', True) or self.cached_path != self.current_path:
+            return False
+        candidates = {path for path in self.entries if path is not None}
+        previous = self.marked
+        self.marked = (candidates if mode == 'all' else
+                       candidates - previous if mode == 'invert' else set())
+        self.reset_shift_selection_anchor()
+        with self.app.batch_update():
+            for path in previous.symmetric_difference(self.marked):
+                self._update_mark_cell(path)
+            self.update_info()
+            self.update_summary()
+        return True
+
     def shift_select(self, delta: int) -> None:
         """Extend a range and repaint only rows whose mark state changed."""
         if self.table.row_count <= 0:

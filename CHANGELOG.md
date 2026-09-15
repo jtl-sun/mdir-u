@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.26.15
+
+- Add independent terminal thumbnail views with bounded background image decoding.
+- Add per-pane bulk selection buttons and distinct teal selected-item styling.
+- Support right-button continuous drag selection and edge scrolling without retoggling revisited items.
+- Preserve file-list selection and existing file operations when switching views.
+- Save hidden-file visibility separately per pane, including named workspaces.
+- Publish source, wheel and Ubuntu 24.04 amd64 Debian assets after CI validation.
+
+
 ## 2.26.2
 
 - Replaced the generic `Ctrl+P` command palette and its Maximize, Quit, and

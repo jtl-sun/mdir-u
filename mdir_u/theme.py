@@ -7,6 +7,7 @@ from rich.text import Text
 from textual.theme import Theme
 
 from . import core as legacy
+from .selection_style import MARK_PREFIX, MARK_FOREGROUND, CURSOR_BACKGROUND
 
 
 THEME_NAME = "total-commander"
@@ -75,7 +76,7 @@ _current_marked = MARKED
 
 def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
     """Render one cached directory entry with the default MDIR theme."""
-    prefix = "* " if marked else "  "
+    prefix = MARK_PREFIX if marked else "  "
     text = Text(
         prefix
         + legacy.display_file_title(
@@ -84,7 +85,7 @@ def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
         )
     )
     if marked:
-        text.stylize(f"bold {_current_marked}")
+        text.stylize(f"bold {MARK_FOREGROUND}")
     elif entry.is_directory:
         text.stylize(f"bold {_current_folder}")
     elif entry.path.suffix.lower() in EXECUTABLE_EXTENSIONS:
@@ -96,10 +97,10 @@ def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
 
 def path_name_text(path: Path, marked: bool = False) -> Text:
     """Render one filesystem path without changing the original MDIR API."""
-    prefix = "* " if marked else "  "
+    prefix = MARK_PREFIX if marked else "  "
     text = Text(prefix + legacy.display_file_title(path))
     if marked:
-        text.stylize(f"bold {_current_marked}")
+        text.stylize(f"bold {MARK_FOREGROUND}")
     elif path.is_dir():
         text.stylize(f"bold {_current_folder}")
     elif path.suffix.lower() in EXECUTABLE_EXTENSIONS:
@@ -341,5 +342,11 @@ DocumentPreviewPanel #document_preview_info {{
 #search_results > .datatable--cursor {{
     background: $primary;
     color: $text-primary;
+}}
+"""
+
+TOTAL_COMMANDER_CSS += f"""
+FilePane.active DataTable > .datatable--cursor {{
+    background: {CURSOR_BACKGROUND}; color: white; text-style: bold;
 }}
 """

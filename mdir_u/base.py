@@ -654,7 +654,8 @@ class BaseApp(AIShellApp):
         self._file_operation_screen = screen
         self.push_screen(screen)
         self.set_status(f"{operation.title()} started: {len(items):,} item(s).")
-        self._run_file_operation_in_background(
+        self.call_after_refresh(
+            self._run_file_operation_in_background,
             operation,
             items,
             destination,
@@ -863,6 +864,8 @@ class BaseApp(AIShellApp):
                     str(self.right.current_path),
                     self.active_side,  # type: ignore[arg-type]
                     bool(self.show_hidden_system),
+                    left_show_hidden=self.left.show_hidden_system,
+                    right_show_hidden=self.right.show_hidden_system,
                 )
             )
             self.set_status(f"Workspace saved: {name}")
@@ -887,8 +890,8 @@ class BaseApp(AIShellApp):
             self.left.current_path = left
             self.right.current_path = right
             self.show_hidden_system = workspace.show_hidden
-            self.left.show_hidden_system = workspace.show_hidden
-            self.right.show_hidden_system = workspace.show_hidden
+            self.left.show_hidden_system = workspace.show_hidden if workspace.left_show_hidden is None else workspace.left_show_hidden
+            self.right.show_hidden_system = workspace.show_hidden if workspace.right_show_hidden is None else workspace.right_show_hidden
             self.left.refresh_listing()
             self.right.refresh_listing()
             self.set_active(workspace.active)

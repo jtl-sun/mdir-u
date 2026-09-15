@@ -4,7 +4,7 @@ Section: utils
 Priority: optional
 Architecture: @ARCH@
 Maintainer: Jtlsun Chois
-Depends: python3 (>= 3.11), python3-venv, xdg-utils, poppler-utils, nano
+Depends: python3 (>= 3.12), python3 (<< 3.13), python3-venv, xdg-utils, poppler-utils, nano
 Homepage: https://github.com/jtl-sun/mdir-u
 Description: Fast dual-pane terminal file manager
  mDIR-U provides keyboard- and mouse-friendly file management, previews,

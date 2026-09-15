@@ -2005,6 +2005,8 @@ class MDir(App):
                         "column_widths": dict(self.column_widths),
                         "column_layout_version": CURRENT_COLUMN_LAYOUT_VERSION,
                         "show_hidden_system": bool(self.show_hidden_system),
+                        "left_show_hidden_system": bool(self.left.show_hidden_system),
+                        "right_show_hidden_system": bool(self.right.show_hidden_system),
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -2115,37 +2117,29 @@ class MDir(App):
             pass
 
     def update_hidden_buttons(self) -> None:
-        """Update Hidden/System toggle appearance for both panes."""
-        label = "Hide H/S" if self.show_hidden_system else "Show H/S"
-
-        for button_id in (
-            "#left_hidden_toggle",
-            "#right_hidden_toggle",
-        ):
+        """Each button describes the visibility of its own pane."""
+        for side in ('left', 'right'):
             try:
-                button = self.query_one(button_id, Button)
-                button.label = label
-                button.set_class(
-                    self.show_hidden_system,
-                    "showing-hidden",
-                )
+                pane = self.left if side == 'left' else self.right
+                showing = pane.show_hidden_system
+                button = self.query_one(f'#{side}_hidden_toggle', Button)
+                button.label = 'Hi' if showing else 'Sh'
+                button.tooltip = f"{'Hide' if showing else 'Show'} Hidden/System files in the {side} pane"
+                button.set_class(showing, 'showing-hidden')
             except Exception:
                 pass
 
-    def toggle_hidden_system(self) -> None:
-        """Toggle Hidden/System visibility globally for both panes."""
-        self.show_hidden_system = not self.show_hidden_system
-
-        self.left.set_hidden_system_visibility(self.show_hidden_system)
-        self.right.set_hidden_system_visibility(self.show_hidden_system)
-
+    def toggle_hidden_system(self, side: str | None = None) -> None:
+        """Toggle only the clicked pane, or the active pane for Ctrl+H."""
+        side = side or self.active_side
+        pane = self.left if side == 'left' else self.right
+        pane.set_hidden_system_visibility(not pane.show_hidden_system)
+        self.set_active(side)
         self.update_hidden_buttons()
         self._save_paths()
 
-        if self.show_hidden_system:
-            self.set_status("Hidden/System files are now visible.")
-        else:
-            self.set_status("Hidden/System files are hidden.")
+        state = 'visible' if pane.show_hidden_system else 'hidden'
+        self.set_status(f'{side.title()} pane: Hidden/System files are {state}.')
 
     def _sync_drive_buttons(self) -> None:
         """Show buttons for available drives and hide all others.
@@ -2323,7 +2317,7 @@ class MDir(App):
                 "left_hidden_toggle",
                 "right_hidden_toggle",
             }:
-                self.toggle_hidden_system()
+                self.toggle_hidden_system(button_id.split("_", 1)[0])
                 event.stop()
                 return
 
