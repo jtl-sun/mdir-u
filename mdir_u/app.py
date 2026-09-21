@@ -11,6 +11,7 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -76,6 +77,10 @@ class MDirApp(FastFileManagerApp):
     TITLE = f"MDIR-U {VERSION}"
     SUB_TITLE = "Dual Pane File Manager"
     CSS = FastFileManagerApp.CSS + """
+    Screen { overflow: hidden; }
+    .pane-path-row { height: 1; width: 100%; }
+    .pane-path-row .pane_path { width: 1fr; }
+    .recent-folder-path-button { width: 3; min-width: 3; height: 1; min-height: 1; border: none; padding: 0; margin: 0; }
     #document_preview {
         display: none;
     }
@@ -146,6 +151,7 @@ class MDirApp(FastFileManagerApp):
     .selection-invert { color: #ff5555; }
     """ + TOTAL_COMMANDER_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
+        Binding("alt+down", "recent_folders", "Recent folders", show=False, priority=True),
         Binding("alt+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
         Binding(
             "ctrl+f3",
@@ -349,12 +355,28 @@ class MDirApp(FastFileManagerApp):
         yield Button("Th", id=f"{side}_thumbnail", classes="thumbnail-button", tooltip=f"Thumbnail / List ({side})")
         yield Static("", classes="selection-spacer")
         with Horizontal(classes="selection-actions"):
-            for suffix, label, hint in (("all", "*a", "Select All"), ("none", "*-", "Deselect All"), ("invert", "**", "Invert Selection")):
+            for suffix, label, hint in (("all", "*a", "Select All"), ("none", "*-", "Deselect All"), ("invert", Text.from_markup("[#e5a000]*[/][#eeeeee]*[/]"), "Invert Selection")):
                 yield Button(label, id=f"{side}_select_{suffix}", classes=f"selection-button selection-{suffix}", tooltip=f"{hint} ({side})")
 
     @property
     def document_preview(self) -> DocumentPreviewPanel:
         return self.query_one("#document_preview", DocumentPreviewPanel)
+
+    @on(Button.Pressed, '.recent-folder-path-button')
+    def recent_folder_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if len(self.screen_stack) != 1:
+            return
+        side = 'left' if event.button.id == 'left_recent_folders' else 'right'
+        if side == 'right' and self.ai_mode:
+            self.query_one('#ai_panel').focus_prompt()
+            self.set_status('Use F12 to restore the right file pane before opening recent folders.')
+            return
+        if side == 'right' and self.preview_mode:
+            self._hide_document_preview(restore_right_focus=False)
+            self.preview_enabled = False
+        self.set_active(side)
+        self._show_recent_folders(side)
 
     async def on_mount(self) -> None:
         super().on_mount()

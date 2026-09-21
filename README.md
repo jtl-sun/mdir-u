@@ -31,6 +31,11 @@ file manager from the DOS era.
 
 ## Highlights
 
+- Recent Folders (`▼` / `Alt+Down`) on both panels with shared history
+- Batched large-folder selection and accelerated right-drag in list and thumbnail modes
+- Cancellable cached LibreOffice PDF previews for Excel, Word and PowerPoint
+- [2.26.30 rebuild and platform notes](docs/REBUILD-2.26.30.md)
+
 - Fast dual-pane file management with editable paths
 - Responsive Copy, Move, and Delete for selections exceeding 1,000 items
 - Compact overwrite warning before Copy or Move replaces a same-name item
