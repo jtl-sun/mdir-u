@@ -1052,7 +1052,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             with patch(
                 "mdir_u.preview.document._libreoffice_executable",
                 return_value=None,
-            ):
+            ), patch("mdir_u.preview.document.render_cached", return_value=None):
                 expected = ((markdown, "Markdown"), (csv_path, "CSV"),
                             (docx, "Word"), (pptx, "PowerPoint"))
                 for path, kind in expected:
@@ -1876,4 +1876,5 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -258,12 +258,12 @@ class BaseApp(AIShellApp):
 
         def selected(value: Optional[str]) -> None:
             if not value:
-                pane.table.focus()
+                self.set_active(side)
                 return
             self.set_active(side)
             if pane.navigate_to_path(value):
                 self.record_recent_folder(pane.current_path)
-                pane.table.focus()
+                self.set_active(side)
             else:
                 self.remove_recent_folder(value)
 
@@ -1385,3 +1385,4 @@ class BaseApp(AIShellApp):
             CompactDriveScreen(choices, current_path),
             location_selected,
         )
+

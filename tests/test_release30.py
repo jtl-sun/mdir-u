@@ -93,3 +93,9 @@ class RecentPaneTests(unittest.IsolatedAsyncioTestCase):
                     button=app.query_one('#left_thumbnail'); region=button.region
                     await pilot.click(offset=(region.x+1,region.y))
                     await wait(lambda:len(app.screen_stack)==1 and app.thumbnail_modes['left'])
+                    app.set_active('left')
+                    await pilot.press('alt+down')
+                    await wait(lambda:isinstance(app.screen,RecentFolderScreen))
+                    await pilot.press('escape')
+                    await wait(lambda:app.focused is app.thumbnail_grids['left'])
+
