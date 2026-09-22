@@ -6,11 +6,11 @@ from threading import Event
 from typing import Optional, Sequence
 
 from rich.cells import cell_len
-from textual import on
+from textual import on, events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, ProgressBar, Select, Static
+from textual.widgets import Button, Label, ProgressBar, Select, Static, OptionList
 
 from .inputs import ThinCursorInput as Input
 
@@ -610,6 +610,236 @@ class CompactDriveScreen(ModalScreen[Optional[str]]):
     @on(Button.Pressed, "#drive_close")
     def cancel_clicked(self, event: Button.Pressed) -> None:
         event.stop()
+        self.dismiss(None)
+
+    def key_escape(self) -> None:
+        self.dismiss(None)
+
+
+class RecentFolderScreen(ModalScreen[Optional[str]]):
+    """One-click MRU-folder drop-down anchored to a pane path bar."""
+
+    CSS = """
+    RecentFolderScreen {
+        align: left top;
+        background: #00000000;
+    }
+
+    #recent_folder_dialog {
+        position: absolute;
+        border: solid $surface-lighten-2;
+        background: $surface;
+        padding: 0;
+    }
+
+    #recent_folder_header {
+        height: 1;
+        min-height: 1;
+        max-height: 1;
+        background: $surface-lighten-1;
+    }
+
+    #recent_folder_title {
+        width: 1fr;
+        height: 1;
+        padding-left: 1;
+        color: $foreground;
+        text-style: bold;
+        text-wrap: nowrap;
+    }
+
+    #recent_folder_close {
+        width: 3;
+        min-width: 3;
+        height: 1;
+        min-height: 1;
+        max-height: 1;
+        padding: 0;
+        margin: 0;
+        border: none;
+        background: $surface-lighten-1;
+        color: $foreground;
+        text-style: bold;
+    }
+
+    #recent_folder_list {
+        width: 1fr;
+        height: 1fr;
+        border: none;
+        background: $surface;
+        color: $foreground;
+        scrollbar-size-vertical: 1;
+    }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(
+        self,
+        folders: Sequence[str],
+        current_path: str,
+        side: str,
+        *,
+        anchor_right: int | None = None,
+        anchor_top: int | None = None,
+    ) -> None:
+        super().__init__()
+        self.folders = [str(folder) for folder in folders if str(folder).strip()]
+        self.current_path = current_path
+        self.side = side.lower()
+        self.anchor_right = anchor_right
+        self.anchor_top = anchor_top
+        self.initial_index = (
+            self.folders.index(current_path)
+            if current_path in self.folders
+            else 0
+        )
+        longest = max((cell_len(folder) for folder in self.folders), default=40)
+        self.preferred_width = max(42, min(120, longest + 5))
+
+    def compose(self) -> ComposeResult:
+        title = f"Recent folders — {self.side.upper()} pane"
+        prompts = [
+            ("✓ " if folder == self.current_path else "  ") + folder
+            for folder in self.folders
+        ]
+        with Vertical(id="recent_folder_dialog"):
+            with Horizontal(id="recent_folder_header"):
+                yield Label(title, id="recent_folder_title")
+                yield Button("X", id="recent_folder_close")
+            yield OptionList(*prompts, id="recent_folder_list", markup=False)
+
+    def on_mount(self) -> None:
+        dialog = self.query_one("#recent_folder_dialog", Vertical)
+        pane_width = max(32, self.size.width // 2 - 2)
+        width = min(self.preferred_width, pane_width)
+        top = max(0, int(self.anchor_top or 4))
+        available_height = max(4, self.size.height - top - 1)
+        height = min(max(4, len(self.folders) + 1), available_height, 24)
+
+        right = int(
+            self.anchor_right
+            or (self.size.width // 2 if self.side == "left" else self.size.width)
+        )
+        left = max(0, min(self.size.width - width, right - width))
+
+        dialog.styles.width = width
+        dialog.styles.height = height
+        dialog.styles.offset = (left, top)
+
+        option_list = self.query_one("#recent_folder_list", OptionList)
+        option_list.highlighted = min(
+            self.initial_index, max(0, len(self.folders) - 1)
+        )
+        option_list.focus()
+
+    @on(OptionList.OptionSelected, "#recent_folder_list")
+    def folder_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        index = int(event.option_index)
+        if 0 <= index < len(self.folders):
+            self.dismiss(self.folders[index])
+
+    def _point_inside_dialog(self, screen_x: int, screen_y: int) -> bool:
+        """Return whether a screen-cell coordinate falls inside the popup."""
+        try:
+            region = self.query_one("#recent_folder_dialog", Vertical).region
+            return (
+                int(region.x) <= int(screen_x) < int(region.right)
+                and int(region.y) <= int(screen_y) < int(region.bottom)
+            )
+        except Exception:
+            return True
+
+    def _forward_outside_click(
+        self,
+        screen_x: int,
+        screen_y: int,
+        button: int,
+        shift: bool,
+        meta: bool,
+        ctrl: bool,
+        delta_x: int,
+        delta_y: int,
+    ) -> None:
+        """Replay one outside click on the newly exposed main screen.
+
+        A ModalScreen consumes the physical MouseDown which closes it, so the
+        widget underneath would otherwise require a second click.  Replaying
+        the complete mouse gesture after the screen has been popped gives the
+        recent-folder list normal desktop drop-down behaviour: click anywhere
+        else once, the popup closes, and that same click still does its job.
+        """
+        try:
+            screen = self.app.screen
+            widget, region = screen.get_widget_at(int(screen_x), int(screen_y))
+        except Exception:
+            return
+
+        # Clicking the triangle that opened this popup acts as a true toggle:
+        # close it rather than immediately reopening it via click-through.
+        if getattr(widget, "id", None) == f"{self.side}_recent_folders":
+            return
+
+        local_x = int(screen_x) - int(region.x)
+        local_y = int(screen_y) - int(region.y)
+        try:
+            style = screen.get_style_at(int(screen_x), int(screen_y))
+        except Exception:
+            style = getattr(widget, "rich_style", None)
+
+        common = dict(
+            widget=widget,
+            x=local_x,
+            y=local_y,
+            delta_x=int(delta_x),
+            delta_y=int(delta_y),
+            button=int(button),
+            shift=bool(shift),
+            meta=bool(meta),
+            ctrl=bool(ctrl),
+            screen_x=int(screen_x),
+            screen_y=int(screen_y),
+            style=style,
+        )
+        try:
+            widget.post_message(events.MouseDown(**common))
+            widget.post_message(events.MouseUp(**common))
+            widget.post_message(events.Click(**common, chain=1))
+        except Exception:
+            # Click-through is a convenience.  Never let a stale layout target
+            # or a widget disappearing during refresh destabilize the manager.
+            return
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Dismiss on an outside click and pass that click through once."""
+        screen_x = int(getattr(event, "screen_x", event.x))
+        screen_y = int(getattr(event, "screen_y", event.y))
+        if self._point_inside_dialog(screen_x, screen_y):
+            return
+
+        event.stop()
+        args = (
+            screen_x,
+            screen_y,
+            int(event.button),
+            bool(getattr(event, "shift", False)),
+            bool(getattr(event, "meta", False)),
+            bool(getattr(event, "ctrl", False)),
+            int(getattr(event, "delta_x", 0)),
+            int(getattr(event, "delta_y", 0)),
+        )
+        self.dismiss(None)
+        # Wait until the main screen is active and rendered again before
+        # hit-testing the coordinate that was underneath the modal screen.
+        self.app.call_after_refresh(self._forward_outside_click, *args)
+
+    @on(Button.Pressed, "#recent_folder_close")
+    def close_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
         self.dismiss(None)
 
     def key_escape(self) -> None:

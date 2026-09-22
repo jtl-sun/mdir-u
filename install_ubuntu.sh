@@ -22,7 +22,7 @@ if command -v apt-get >/dev/null 2>&1; then
         exit 1
     fi
     $SUDO apt-get update
-    $SUDO apt-get install -y python3 python3-venv python3-pip xdg-utils poppler-utils zenity nano
+    $SUDO apt-get install -y python3 python3-venv python3-pip xdg-utils poppler-utils zenity nano libreoffice-calc libreoffice-writer libreoffice-impress
 fi
 
 python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || {

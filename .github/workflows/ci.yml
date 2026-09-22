@@ -17,7 +17,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install Ubuntu package prerequisites
-        run: sudo apt-get update && sudo apt-get install -y python3-venv xdg-utils poppler-utils nano
+        run: sudo apt-get update && sudo apt-get install -y python3-venv xdg-utils poppler-utils nano libreoffice-calc libreoffice-writer libreoffice-impress
       - name: Reject tracked build artifacts
         shell: bash
         run: |

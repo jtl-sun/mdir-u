@@ -100,7 +100,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.26.15")
+        self.assertEqual(__version__, "2.26.30")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
@@ -1052,7 +1052,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             with patch(
                 "mdir_u.preview.document._libreoffice_executable",
                 return_value=None,
-            ):
+            ), patch("mdir_u.preview.document.render_cached", return_value=None):
                 expected = ((markdown, "Markdown"), (csv_path, "CSV"),
                             (docx, "Word"), (pptx, "PowerPoint"))
                 for path, kind in expected:
@@ -1876,4 +1876,5 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

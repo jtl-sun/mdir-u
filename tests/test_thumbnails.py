@@ -64,8 +64,10 @@ class ThumbnailTests(unittest.IsolatedAsyncioTestCase):
             pane.toggle_mark_path(pane.entries[2])
             await self.pilot.mouse_down(grid, offset=(21, 2), button=3)
             await self.pilot.hover(grid, offset=(41, 11))
+            grid._edge_tick()
             last = grid.columns + 2
             await self.pilot.hover(grid, offset=(21, 2))
+            grid._edge_tick()
             await self.pilot._post_mouse_events([events.MouseUp], widget=grid, offset=(21, 2), button=3)
             self.assertEqual(pane.marked, set(pane.entries[1:last+1]) - {pane.entries[2]})
             self.assertEqual(other.marked, before_other)

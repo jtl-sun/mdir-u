@@ -1,3 +1,7 @@
+# 2.26.30
+
+Port recent-folder menus, batched selection and drag improvements, modal focus protection, and a cancellable LibreOffice PDF cache to Ubuntu. Preserve Linux paths, terminal thumbnails, Trash, and desktop integration.
+
 # Changelog
 
 ## 2.26.15

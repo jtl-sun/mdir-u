@@ -11,9 +11,11 @@ from typing import Mapping, Optional
 from textual import work
 
 from . import core as legacy
+from .recent_folders import RecentFolderStore
 from .ime import enable_windows_korean_width_compatibility
 from .shell import AIShellApp
 from .ui.dialogs import (
+    RecentFolderScreen,
     CompactConfirmScreen,
     CompactCopyScreen,
     CompactDriveScreen,
@@ -224,10 +226,72 @@ class BaseApp(AIShellApp):
         self._operation_journal = OperationJournal(data_dir / "operations.json")
         self._workspace_store = WorkspaceStore(data_dir / "workspaces.json")
         self._macro_store = MacroStore(data_dir / "macros.json")
+        self._recent_folder_store = RecentFolderStore(data_dir / "recent_folders.json")
+        self.recent_folders = self._recent_folder_store.load()
         self._macro_recording_name: str | None = None
         self._macro_recording_actions: list[MacroAction] = []
         self._file_index_path = data_dir / "mindex.sqlite3"
         super().__init__()
+
+    def record_recent_folder(self, path: Path | str) -> None:
+        """Record a successful pane visit in the shared MRU folder list."""
+        try:
+            self.recent_folders = self._recent_folder_store.record(path)
+        except OSError:
+            # Folder navigation must never fail just because history cannot be saved.
+            return
+
+    def remove_recent_folder(self, path: Path | str) -> None:
+        """Forget a stale MRU entry without affecting pane navigation."""
+        try:
+            self.recent_folders = self._recent_folder_store.remove(path)
+        except OSError:
+            return
+
+    def _show_recent_folders(self, side: str) -> None:
+        side = 'left' if side == 'left' else 'right'
+        folders = list(getattr(self, 'recent_folders', ()))
+        if not folders:
+            self.set_status('Recent folders: no history yet.')
+            return
+        pane = self.left if side == 'left' else self.right
+
+        def selected(value: Optional[str]) -> None:
+            if not value:
+                self.set_active(side)
+                return
+            self.set_active(side)
+            if pane.navigate_to_path(value):
+                self.record_recent_folder(pane.current_path)
+                self.set_active(side)
+            else:
+                self.remove_recent_folder(value)
+
+        anchor_right: int | None = None
+        anchor_top: int | None = None
+        try:
+            button = self.query_one(f"#{side}_recent_folders")
+            region = button.region
+            if region.width > 0 and region.height > 0:
+                anchor_right = region.right
+                anchor_top = region.bottom
+        except Exception:
+            pass
+
+        self.push_screen(
+            RecentFolderScreen(
+                folders,
+                str(pane.current_path),
+                side,
+                anchor_right=anchor_right,
+                anchor_top=anchor_top,
+            ),
+            selected,
+        )
+
+    def action_recent_folders(self) -> None:
+        """Show recent folders for the currently active pane."""
+        self._show_recent_folders(self.active_side)
 
     def action_rename(self) -> None:
         """Use the batch tool automatically when more than one item is selected."""
@@ -1321,3 +1385,4 @@ class BaseApp(AIShellApp):
             CompactDriveScreen(choices, current_path),
             location_selected,
         )
+

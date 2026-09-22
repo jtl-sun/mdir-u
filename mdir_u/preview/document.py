@@ -24,6 +24,7 @@ from textual.timer import Timer
 from textual.widgets import Button, Static
 
 from .header import rich_preview_title
+from ..office_pdf_preview import render_cached, OFFICE_EXTENSIONS as CACHED_OFFICE_EXTENSIONS
 
 IMAGE_EXTENSIONS = {
     ".bmp",
@@ -1021,9 +1022,16 @@ def prepare_document_source(
     path: Path,
     *,
     max_image_pixels: int = MAX_PREVIEW_SOURCE_PIXELS,
+    cancel: threading.Event | None = None,
 ) -> DocumentSource:
     """Load one document into a reusable preview source."""
     suffix = path.suffix.lower()
+    if suffix in CACHED_OFFICE_EXTENSIONS:
+        cached = render_cached(path, cancel=cancel)
+        if cached is not None:
+            image, _, detail = _render_pdf(cached)
+            kind = 'Excel' if suffix in EXCEL_EXTENSIONS else 'Word' if suffix in WORD_EXTENSIONS else 'PowerPoint'
+            return DocumentSource(image=image, kind=kind, detail=f'LibreOffice PDF cache | {detail}')
     if suffix in IMAGE_EXTENSIONS:
         image, kind, detail = _render_image(
             path,
@@ -1180,6 +1188,7 @@ class DocumentPreviewPanel(Vertical):
         self.native_pixels = False
         self.focus_point = (0.5, 0.5)
         self._generation = 0
+        self._office_cancel = threading.Event()
         self._render_timer: Optional[Timer] = None
 
     def compose(self) -> ComposeResult:
@@ -1271,6 +1280,7 @@ class DocumentPreviewPanel(Vertical):
             self.native_pixels,
             self.focus_point,
             generation,
+            self._office_cancel,
         )
 
     @work(
@@ -1289,11 +1299,12 @@ class DocumentPreviewPanel(Vertical):
         native_pixels: bool,
         focus: tuple[float, float],
         generation: int,
+        cancel: threading.Event,
     ) -> None:
         created_source = source is None
         try:
             if source is None:
-                source = prepare_document_source(path)
+                source = prepare_document_source(path, cancel=cancel)
             preview = _render_source_view(
                 source,
                 max_columns=columns,
@@ -1387,6 +1398,8 @@ class DocumentPreviewPanel(Vertical):
         self.render_complete = True
 
     def cancel(self) -> None:
+        self._office_cancel.set()
+        self._office_cancel = threading.Event()
         self._generation += 1
         if self._render_timer is not None:
             self._render_timer.stop()

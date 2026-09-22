@@ -46,7 +46,7 @@ class ThumbnailGrid(ScrollView, can_focus=True):
 
     def on_mount(self):
         self.set_interval(0.10, self.sync)
-        self.set_interval(0.07, self._edge_tick)
+        self.set_interval(0.03, self._edge_tick)
 
     def current_revision(self):
         p = self.pane
@@ -246,18 +246,8 @@ class ThumbnailGrid(ScrollView, can_focus=True):
         event.stop()
 
     def toggle_rows(self, rows):
-        with self.app.batch_update():
-            for index in rows:
-                path = self.pane.entries[index]
-                if path is None:
-                    continue
-                if path in self.pane.marked:
-                    self.pane.marked.remove(path)
-                else:
-                    self.pane.marked.add(path)
-                self.pane._update_mark_cell(path)
-            self.pane.update_info()
-            self.pane.update_summary()
+        self.pane.toggle_mark_paths(self.pane.entries[index] for index in rows
+                                    if 0 <= index < len(self.pane.entries))
         self.refresh()
 
     def _visit(self, index):
@@ -277,9 +267,6 @@ class ThumbnailGrid(ScrollView, can_focus=True):
         if self._drag_revision is None:
             return
         self._pointer = (event.x, event.y)
-        index = self.index_at(event.x, event.y, clamp=True)
-        if index is not None:
-            self._visit(index)
         event.stop()
 
     def _edge_tick(self):
@@ -289,15 +276,22 @@ class ThumbnailGrid(ScrollView, can_focus=True):
             self.end_drag()
             return
         x, y = self._pointer
+        if not 0 <= x < self.size.width:
+            return
         direction = -1 if y <= 0 else 1 if y >= self.size.height - 1 else 0
         if direction:
-            self.scroll_to(y=self.scroll_y + direction * 2, animate=False)
-            index = self.index_at(x, y, clamp=True)
-            if index is not None:
-                self._visit(index)
+            distance = max(0, -y if direction < 0 else y - self.size.height + 1)
+            self.scroll_to(y=self.scroll_y + direction * min(16, 2 + distance // 3), animate=False)
+        index = self.index_at(x, y, clamp=True)
+        if index is not None:
+            self._visit(index)
 
     def on_mouse_up(self, event: events.MouseUp):
         if event.button == 3:
+            if self._drag_revision is not None and self._pointer is not None:
+                index = self.index_at(*self._pointer, clamp=True)
+                if index is not None:
+                    self._visit(index)
             self.end_drag()
             event.stop()
 
