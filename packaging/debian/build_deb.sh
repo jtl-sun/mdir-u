@@ -11,6 +11,7 @@ OUT="$ROOT/dist/mdir-u_${VERSION}_${ARCH}.deb"
 mkdir -p "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/share/applications" \
     "$PKG/usr/share/icons/hicolor/256x256/apps" "$PKG/usr/share/mdir-u/wheels" \
     "$ROOT/dist"
+chmod 755 "$PKG/DEBIAN"
 
 python3 -m pip wheel "$ROOT[preview]" --wheel-dir "$PKG/usr/share/mdir-u/wheels"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@ARCH@/$ARCH/g" \
