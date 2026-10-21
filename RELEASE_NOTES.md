@@ -1,3 +1,18 @@
+# mDIR-U 2.26.31
+
+This release introduces the shared progress engine used by Windows mDIR-P and Ubuntu mDIR-U.
+
+- Copy/Move/Delete: current-file and overall progress, processed bytes, speed and ETA.
+- ZIP compression/extraction: cancellable chunk-level progress and pause/resume.
+- Advanced search: scanned entries, matched results and scan rate (no invented percentage while total is unknown).
+- Background button continues work without the modal. `Ctrl+Alt+P` reopens the current progress dialog.
+- Temporary output and source-preserving cancellation are used for large file transfers; existing Linux Trash policy remains unchanged.
+- Per-chunk cancellation has limits for OS-managed Trash operations and same-volume renames.
+
+Use the latest mDIR-U 2.26.31 Debian package or the source `install_ubuntu.sh` script. Back up important files and test removable disks separately. Existing personal settings remain in place.
+
+---
+
 # mDIR-U 2.26.30
 
 Ubuntu adaptation of the mDIR-P 2.26.30 improvements.
