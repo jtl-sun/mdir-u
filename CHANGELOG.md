@@ -1,3 +1,7 @@
+# 2.26.31
+
+Shared cross-platform ProgressTracker for copy, move, delete, archive creation/extraction and search. Two progress bars, transfer rate and ETA, Pause/Resume, Cancel and Background with Ctrl+Alt+P reopen. Safety and regression coverage for chunked file operations and ZIP processing.
+
 # 2.26.30
 
 Port recent-folder menus, batched selection and drag improvements, modal focus protection, and a cancellable LibreOffice PDF cache to Ubuntu. Preserve Linux paths, terminal thumbnails, Trash, and desktop integration.

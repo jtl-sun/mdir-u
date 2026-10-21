@@ -21,6 +21,7 @@ from textual.widgets import Button, Checkbox, DataTable, Label, Select, Static
 
 from .inputs import ThinCursorInput as Input
 from ..platform_support import open_with_default_app
+from ..progress import ProgressTracker
 from textual.worker import Worker
 
 
@@ -514,6 +515,7 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
         self.cancel_event = threading.Event()
         self.search_worker: Optional[Worker[None]] = None
         self.search_running = False
+        self.progress_tracker = ProgressTracker("search")
 
     def compose(self) -> ComposeResult:
         with Vertical(id="file_search_dialog"):
@@ -725,6 +727,9 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
             return
 
         self.cancel_event = threading.Event()
+        self.progress_tracker = ProgressTracker(
+            "search", cancel_event=self.cancel_event
+        )
         self.results.clear()
         table = self.query_one("#search_results", SearchResultsTable)
         table.clear(columns=False)
@@ -742,9 +747,11 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
     ) -> None:
         if not self.is_mounted or not self.search_running:
             return
+        self.progress_tracker.scan(scanned, found, str(directory))
+        state = self.progress_tracker.snapshot()
         self.query_one("#search_status", Static).update(
             f"Searching... scanned {scanned:,}, found {found:,}  "
-            f"[{directory}]"
+            f"({state.items_per_second:,.0f} items/s)  [{directory}]"
         )
 
     def _thread_progress(
@@ -781,6 +788,7 @@ class AdvancedSearchScreen(ModalScreen[Optional[Path]]):
             pass
 
     def _finish_search(self, outcome: SearchOutcome) -> None:
+        self.progress_tracker.finish("cancelled" if self.cancel_event.is_set() else "completed")
         if not self.is_mounted:
             return
         self.results = list(outcome.results)

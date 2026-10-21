@@ -55,6 +55,7 @@ KEY_DEFINITIONS = (
     KeyDefinition("Safe sync", "safe_sync", "ctrl+shift+y", True, "mdir.safe_sync"),
     KeyDefinition("Record macro", "toggle_macro_recording", "ctrl+shift+m", True, "mdir.record_macro"),
     KeyDefinition("Play macro", "play_macro", "ctrl+alt+m", True, "mdir.play_macro"),
+    KeyDefinition("Show progress", "show_progress", "ctrl+alt+p", True, "mdir.show_progress"),
     KeyDefinition("Undo", "undo_last", "ctrl+z", True, "mdir.undo"),
     KeyDefinition("Save workspace", "save_workspace", "ctrl+shift+s", True, "mdir.save_workspace"),
     KeyDefinition("Load workspace", "load_workspace", "ctrl+shift+l", True, "mdir.load_workspace"),

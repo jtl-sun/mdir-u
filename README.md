@@ -131,6 +131,22 @@ export PATH="$HOME/.local/bin:$PATH"
 
 This removes program files and launchers but preserves personal settings.
 
+## Unified operation progress
+
+Copy (F5), Move (F6), Delete (F8), ZIP compression (Alt+F5), and ZIP
+extraction (Alt+F6) share a common live progress model. For large files,
+the operation dialog shows both the current file and overall progress, the
+processed byte count, average transfer speed, and estimated remaining time.
+Pause and Resume take effect at safe per-chunk checkpoints; operating-system
+Trash/Recycle Bin calls may only stop after the current OS call returns.
+
+Select **Background** to continue without the modal; press **Ctrl+Alt+P**
+to reopen the active progress dialog. **Cancel** requests cooperative
+cancellation and does not forcibly terminate the system call currently in
+progress. In the advanced Find Files dialog (Ctrl+F), progress shows scanned
+entries, matched results, and scan speed. Because a search may not know its
+total size in advance, it does not display a fabricated percentage.
+
 ## Controls
 
 | Key | Action |

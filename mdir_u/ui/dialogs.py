@@ -12,6 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, ProgressBar, Select, Static, OptionList
 
+from ..progress import ProgressSnapshot
 from .inputs import ThinCursorInput as Input
 
 
@@ -159,109 +160,133 @@ class CompactConfirmScreen(ModalScreen[bool]):
 
 
 class FileOperationProgressScreen(ModalScreen[None]):
-    """Responsive progress window for long copy, move, and delete batches."""
+    """Shared two-level progress dialog for filesystem and archive workers."""
 
     CSS = """
-    FileOperationProgressScreen {
-        align: center middle;
-        background: #00000073;
-    }
-
+    FileOperationProgressScreen { align: center middle; background: #00000073; }
     #file_operation_dialog {
-        width: 72;
-        max-width: 94%;
-        height: 12;
-        border: solid $primary;
-        background: $surface;
-        padding: 1 2;
+        width: 86; max-width: 96%; height: 19;
+        border: solid $primary; background: $surface; padding: 1 2;
     }
-
-    #file_operation_title {
-        height: 1;
-        color: $foreground;
-        text-style: bold;
-    }
-
-    #file_operation_item {
-        height: 1;
-        margin-top: 1;
-        color: #bbbbbb;
-        text-overflow: ellipsis;
+    #file_operation_title { height: 1; text-style: bold; }
+    #file_operation_source, #file_operation_target,
+    #file_operation_item, #file_operation_metrics, #file_operation_counts {
+        height: 1; color: $foreground; text-overflow: ellipsis;
         text-wrap: nowrap;
     }
-
-    #file_operation_progress {
-        margin-top: 1;
-    }
-
-    #file_operation_actions {
-        height: 3;
-        margin-top: 1;
-        align-horizontal: right;
-    }
-
-    #file_operation_cancel, #file_operation_pause {
-        min-width: 12;
-        height: 3;
-    }
+    #file_operation_actions { height: 3; margin-top: 1; align-horizontal: right; }
+    #file_operation_pause, #file_operation_cancel, #file_operation_background { min-width: 12; }
     """
 
-    def __init__(
-        self,
-        operation: str,
-        total: int,
-        cancel_event: Event,
-        pause_event: Event,
-    ) -> None:
+    def __init__(self, operation: str, total: int,
+                 cancel_event: Event, pause_event: Event,
+                 source: str = "", destination: str = "") -> None:
         super().__init__()
         self.operation = operation.title()
         self.total = total
         self.cancel_event = cancel_event
         self.pause_event = pause_event
+        self.source = source
+        self.destination = destination
 
     def compose(self) -> ComposeResult:
         with Vertical(id="file_operation_dialog"):
-            yield Label(
-                f"{self.operation}: 0 / {self.total}",
-                id="file_operation_title",
-            )
-            yield Static("Preparing...", id="file_operation_item")
-            yield ProgressBar(
-                total=max(1, self.total),
-                show_eta=True,
-                id="file_operation_progress",
-            )
+            yield Label(f"{self.operation}: 0 / {self.total:,}",
+                        id="file_operation_title")
+            yield Static(f"Source: {self.source or '-'}",
+                         id="file_operation_source")
+            yield Static(f"Destination: {self.destination or '-'}",
+                         id="file_operation_target")
+            yield Static("Current file: Preparing...", id="file_operation_item")
+            yield Static("Current file progress", id="file_operation_current_label")
+            yield ProgressBar(total=100, show_eta=False,
+                              id="file_operation_current_progress")
+            yield Static("Overall progress", id="file_operation_overall_label")
+            yield ProgressBar(total=100, show_eta=False,
+                              id="file_operation_progress")
+            yield Static("0 B / 0 B  |  0 B/s  |  ETA: --",
+                         id="file_operation_metrics")
+            yield Static("Files: 0 / 0", id="file_operation_counts")
             with Horizontal(id="file_operation_actions"):
                 yield Button("Pause", id="file_operation_pause")
                 yield Button("Cancel", id="file_operation_cancel")
+                yield Button("Background", id="file_operation_background")
 
     def on_mount(self) -> None:
         self.query_one("#file_operation_cancel", Button).focus()
 
+    @staticmethod
+    def _size(value: float) -> str:
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if abs(value) < 1024 or unit == "TB":
+                return f"{value:,.1f} {unit}" if unit != "B" else f"{value:,.0f} B"
+            value /= 1024
+        return f"{value:,.1f} TB"
+
+    def update_snapshot(self, state: ProgressSnapshot) -> None:
+        if not self.is_mounted:
+            return
+        self.query_one("#file_operation_title", Label).update(
+            f"{self.operation}: {state.items_done:,} / "
+            f"{state.total_items if state.total_items is not None else '?'}"
+        )
+        self.query_one("#file_operation_item", Static).update(
+            f"Current file: {state.current_name or 'Preparing...'}"
+        )
+        self.query_one("#file_operation_current_progress", ProgressBar).update(
+            progress=state.current_percent or 0
+        )
+        self.query_one("#file_operation_progress", ProgressBar).update(
+            progress=state.overall_percent or 0
+        )
+        remaining = (
+            f"{int(state.eta_seconds // 60)}m {int(state.eta_seconds % 60)}s"
+            if state.eta_seconds is not None else "--"
+        )
+        total = self._size(state.total_bytes) if state.total_bytes is not None else "?"
+        self.query_one("#file_operation_metrics", Static).update(
+            f"{self._size(state.bytes_done)} / {total}  |  "
+            f"{self._size(state.bytes_per_second)}/s  |  ETA: {remaining}"
+        )
+        self.query_one("#file_operation_counts", Static).update(
+            f"Files: {state.items_done:,} / "
+            f"{state.total_items if state.total_items is not None else '?'}"
+        )
+
     def update_progress(self, completed: int, item_name: str) -> None:
+        """Compatibility for callers still reporting item-level progress."""
+        if not self.is_mounted:
+            return
         self.query_one("#file_operation_title", Label).update(
             f"{self.operation}: {completed:,} / {self.total:,}"
         )
-        self.query_one("#file_operation_item", Static).update(item_name)
+        self.query_one("#file_operation_item", Static).update(
+            f"Current file: {item_name}"
+        )
         self.query_one("#file_operation_progress", ProgressBar).update(
-            progress=completed,
-            total=max(1, self.total),
+            progress=(100 * completed / max(1, self.total))
         )
 
     def request_cancel(self) -> None:
         if self.cancel_event.is_set():
             return
         self.cancel_event.set()
-        self.app.set_status(
-            "Cancellation requested. The current filesystem call may finish "
-            "in the background."
-        )
+        self.pause_event.clear()
+        self.app.set_status("Cancellation requested; finishing the current OS call safely.")
         self.dismiss(None)
 
     @on(Button.Pressed, "#file_operation_cancel")
     def cancel_clicked(self, event: Button.Pressed) -> None:
         event.stop()
         self.request_cancel()
+
+    @on(Button.Pressed, "#file_operation_background")
+    def background_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(None)
+        self.app.set_status(
+            f"{self.operation} continues in background. Ctrl+Alt+P shows progress."
+        )
 
     @on(Button.Pressed, "#file_operation_pause")
     def pause_clicked(self, event: Button.Pressed) -> None:
@@ -274,9 +299,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
         else:
             self.pause_event.set()
             button.label = "Resume"
-            self.app.set_status(
-                f"{self.operation} will pause after the current item."
-            )
+            self.app.set_status(f"{self.operation} paused at the next safe checkpoint.")
 
     def key_escape(self) -> None:
         self.request_cancel()

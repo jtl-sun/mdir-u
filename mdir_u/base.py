@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from .ui.dialogs import (
     CopyRequest,
     FileOperationProgressScreen,
 )
+from .progress import OperationCancelled, ProgressSnapshot, ProgressTracker
 from .file_operations import (
     PERMANENT_DELETE_THRESHOLD_BYTES,
     FileOperation,
@@ -217,6 +219,11 @@ class BaseApp(AIShellApp):
 
     def __init__(self) -> None:
         self._archive_busy = False
+        self._archive_progress_screen: FileOperationProgressScreen | None = None
+        self._archive_progress_config: tuple | None = None
+        self._archive_last_snapshot: ProgressSnapshot | None = None
+        self._file_last_snapshot: ProgressSnapshot | None = None
+        self._file_progress_config: tuple | None = None
         self._file_operation_busy = False
         self._file_operation_cancel: Event | None = None
         self._file_operation_pause: Event | None = None
@@ -332,6 +339,66 @@ class BaseApp(AIShellApp):
 
         self.push_screen(BatchRenameScreen(items), rename_requested)
 
+    def action_show_progress(self) -> None:
+        """Reopen the progress view while a worker continues in background."""
+        if self._archive_busy and self._archive_progress_config is not None:
+            screen = self._archive_progress_screen
+            if screen is not None and screen.is_mounted:
+                return
+            config = self._archive_progress_config
+            screen = FileOperationProgressScreen(
+                config[0], config[1], config[2], config[3],
+                source=config[4], destination=config[5],
+            )
+            self._archive_progress_screen = screen
+            self.push_screen(screen)
+            state = self._archive_last_snapshot
+            if state is not None:
+                screen.call_after_refresh(screen.update_snapshot, state)
+            return
+        if self._file_operation_busy and self._file_progress_config is not None:
+            screen = self._file_operation_screen
+            if screen is not None and screen.is_mounted:
+                return
+            config = self._file_progress_config
+            screen = FileOperationProgressScreen(
+                config[0], config[1], config[2], config[3],
+                source=config[4], destination=config[5],
+            )
+            self._file_operation_screen = screen
+            self.push_screen(screen)
+            state = self._file_last_snapshot
+            if state is not None:
+                screen.call_after_refresh(screen.update_snapshot, state)
+            return
+        self.set_status("No active background file operation.")
+
+    def _update_archive_progress(self, state: ProgressSnapshot) -> None:
+        self._archive_last_snapshot = state
+        screen = self._archive_progress_screen
+        if screen is not None and screen.is_mounted:
+            try:
+                screen.update_snapshot(state)
+            except Exception as exc:
+                # A presentation failure must never abort or roll back a
+                # filesystem transaction running in the worker.
+                self.set_status(f"Progress display unavailable: {exc}")
+        elif self._archive_busy:
+            self.set_status(
+                f"{state.operation.title()} running: "
+                f"{state.overall_percent:.0f}% - {state.current_name}"
+                if state.overall_percent is not None
+                else f"{state.operation.title()} running: {state.current_name}"
+            )
+
+    def _dismiss_archive_progress(self) -> None:
+        screen = self._archive_progress_screen
+        self._archive_progress_screen = None
+        self._archive_progress_config = None
+        self._archive_last_snapshot = None
+        if screen is not None and screen.is_mounted:
+            screen.dismiss(None)
+
     def action_compress_zip(self) -> None:
         """Create a ZIP from the active pane in the opposite pane by default."""
         source_side = self.active_side
@@ -369,11 +436,29 @@ class BaseApp(AIShellApp):
                 self.set_status("Another ZIP operation is already running.")
                 return
             self._archive_busy = True
-            self.set_status(f"Creating ZIP: {request.destination.name} ...")
-            self._create_zip_in_background(
-                tuple(items),
-                request,
-                source_side,
+            cancel = Event()
+            pause = Event()
+            tracker = ProgressTracker(
+                "compress", cancel_event=cancel, pause_event=pause,
+                callback=lambda state: self.call_from_thread(
+                    self._update_archive_progress, state
+                ),
+            )
+            screen = FileOperationProgressScreen(
+                "Compress", len(items), cancel, pause,
+                source=str(source_pane.current_path),
+                destination=str(request.destination),
+            )
+            self._archive_progress_screen = screen
+            self._archive_progress_config = (
+                "Compress", len(items), cancel, pause,
+                str(source_pane.current_path), str(request.destination),
+            )
+            self._archive_last_snapshot = None
+            self.push_screen(screen)
+            screen.call_after_refresh(
+                self._create_zip_in_background,
+                tuple(items), request, source_side, tracker,
             )
 
         self.push_screen(CreateZipScreen(items, destination), create_requested)
@@ -384,11 +469,15 @@ class BaseApp(AIShellApp):
         items: tuple[Path, ...],
         request: CreateZipRequest,
         source_side: str,
+        tracker: ProgressTracker | None = None,
     ) -> None:
         """Compress without blocking navigation or screen redraws."""
         try:
-            result = create_zip_archive(items, request)
+            result = create_zip_archive(items, request, tracker=tracker)
             error = None
+        except OperationCancelled:
+            result = None
+            error = "Cancelled"
         except Exception as exc:
             result = None
             error = str(exc)
@@ -408,6 +497,10 @@ class BaseApp(AIShellApp):
         error: str | None,
     ) -> None:
         self._archive_busy = False
+        self._dismiss_archive_progress()
+        if error == "Cancelled":
+            self.set_status("ZIP creation cancelled.")
+            return
         if error or result is None:
             message = error or "Unknown ZIP creation error"
             self.set_status(f"ZIP creation failed: {message}")
@@ -470,11 +563,28 @@ class BaseApp(AIShellApp):
                 self.set_status("Another ZIP operation is already running.")
                 return
             self._archive_busy = True
-            self.set_status(f"Extracting ZIP: {archive_path.name} ...")
-            self._extract_zip_in_background(
-                archive_path,
-                request,
-                source_side,
+            cancel = Event()
+            pause = Event()
+            tracker = ProgressTracker(
+                "extract", cancel_event=cancel, pause_event=pause,
+                callback=lambda state: self.call_from_thread(
+                    self._update_archive_progress, state
+                ),
+            )
+            screen = FileOperationProgressScreen(
+                "Extract", 1, cancel, pause,
+                source=str(archive_path),
+                destination=str(request.destination),
+            )
+            self._archive_progress_screen = screen
+            self._archive_progress_config = (
+                "Extract", 1, cancel, pause, str(archive_path), str(request.destination),
+            )
+            self._archive_last_snapshot = None
+            self.push_screen(screen)
+            screen.call_after_refresh(
+                self._extract_zip_in_background,
+                archive_path, request, source_side, tracker,
             )
 
         self.push_screen(
@@ -488,11 +598,15 @@ class BaseApp(AIShellApp):
         archive_path: Path,
         request: ExtractZipRequest,
         source_side: str,
+        tracker: ProgressTracker | None = None,
     ) -> None:
         """Extract without blocking keyboard and mouse input."""
         try:
-            result = extract_zip_archive(archive_path, request)
+            result = extract_zip_archive(archive_path, request, tracker=tracker)
             error = None
+        except OperationCancelled:
+            result = None
+            error = "Cancelled"
         except Exception as exc:
             result = None
             error = str(exc)
@@ -514,6 +628,10 @@ class BaseApp(AIShellApp):
         error: str | None,
     ) -> None:
         self._archive_busy = False
+        self._dismiss_archive_progress()
+        if error == "Cancelled":
+            self.set_status("ZIP extraction cancelled.")
+            return
         if error or result is None:
             message = error or "Unknown ZIP extraction error"
             self.set_status(f"ZIP extraction failed: {message}")
@@ -711,14 +829,22 @@ class BaseApp(AIShellApp):
         pause_event = Event()
         cancel_event.mdir_pause_event = pause_event  # type: ignore[attr-defined]
         screen = FileOperationProgressScreen(
-            operation, len(items), cancel_event, pause_event
+            operation, len(items), cancel_event, pause_event,
+            source=str(items[0].parent) if items else "",
+            destination=str(destination) if destination is not None else "Recycle Bin / Trash",
         )
         self._file_operation_cancel = cancel_event
         self._file_operation_pause = pause_event
         self._file_operation_screen = screen
+        self._file_progress_config = (
+            operation, len(items), cancel_event, pause_event,
+            str(items[0].parent) if items else "",
+            str(destination) if destination is not None else "Recycle Bin / Trash",
+        )
+        self._file_last_snapshot = None
         self.push_screen(screen)
         self.set_status(f"{operation.title()} started: {len(items):,} item(s).")
-        self.call_after_refresh(
+        screen.call_after_refresh(
             self._run_file_operation_in_background,
             operation,
             items,
@@ -743,6 +869,15 @@ class BaseApp(AIShellApp):
         pause_event: Event,
     ) -> None:
         """Run large file batches without blocking the Textual event loop."""
+        tracker = ProgressTracker(
+            operation,
+            total_items=len(items),
+            cancel_event=cancel_event,
+            pause_event=pause_event,
+            callback=lambda state: self.call_from_thread(
+                self._update_file_operation_snapshot, state
+            ),
+        )
         last_update = 0.0
 
         def report(completed: int, total: int, name: str) -> None:
@@ -757,15 +892,17 @@ class BaseApp(AIShellApp):
                 )
 
         try:
-            result = run_file_operation(
-                operation,
-                items,
-                destination,
+            options = dict(
                 new_name=new_name,
                 overwrite=overwrite,
                 cancel_event=cancel_event,
                 progress=report,
             )
+            # Keep third-party/test adapters implementing the older callback
+            # interface usable during the migration to ProgressTracker.
+            if "tracker" in inspect.signature(run_file_operation).parameters:
+                options["tracker"] = tracker
+            result = run_file_operation(operation, items, destination, **options)
             fatal_error = None
         except Exception as exc:
             result = None
@@ -778,6 +915,24 @@ class BaseApp(AIShellApp):
             fatal_error,
             overwrite,
         )
+
+    def _update_file_operation_snapshot(self, state: ProgressSnapshot) -> None:
+        self._file_last_snapshot = state
+        screen = self._file_operation_screen
+        if screen is not None and screen.is_mounted:
+            try:
+                screen.update_snapshot(state)
+            except Exception as exc:
+                # A presentation failure must never abort or roll back a
+                # filesystem transaction running in the worker.
+                self.set_status(f"Progress display unavailable: {exc}")
+        elif self._file_operation_busy:
+            self.set_status(
+                f"{state.operation.title()} running: "
+                f"{state.overall_percent:.0f}% - {state.current_name}"
+                if state.overall_percent is not None
+                else f"{state.operation.title()} running: {state.current_name}"
+            )
 
     def _update_file_operation_progress(
         self, completed: int, item_name: str
@@ -796,6 +951,8 @@ class BaseApp(AIShellApp):
     ) -> None:
         screen = self._file_operation_screen
         self._file_operation_screen = None
+        self._file_progress_config = None
+        self._file_last_snapshot = None
         self._file_operation_cancel = None
         self._file_operation_pause = None
         self._file_operation_busy = False
