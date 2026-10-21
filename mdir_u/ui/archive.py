@@ -16,6 +16,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Label, Select, Static
 
+from ..progress import ProgressTracker
 from .inputs import ThinCursorInput as Input
 
 
@@ -120,6 +121,7 @@ def _archive_entries(items: Sequence[Path], destination: Path):
 def create_zip_archive(
     items: Sequence[Path],
     request: CreateZipRequest,
+    tracker: ProgressTracker | None = None,
 ) -> ArchiveResult:
     """Create a ZIP atomically so a failed operation never replaces a good ZIP."""
     if not items:
@@ -144,6 +146,14 @@ def create_zip_archive(
             )
     destination.parent.mkdir(parents=True, exist_ok=True)
 
+    entries = list(_archive_entries(items, destination)) if tracker is not None else _archive_entries(items, destination)
+    if tracker is not None:
+        tracker.set_totals(
+            items=len(entries),
+            bytes_total=sum(
+                source.stat().st_size for source, _, is_dir in entries if not is_dir
+            ),
+        )
     temporary_path: Optional[Path] = None
     files = directories = bytes_processed = 0
     try:
@@ -161,22 +171,41 @@ def create_zip_archive(
             compresslevel=max(0, min(9, request.compression_level)),
             allowZip64=True,
         ) as archive:
-            for source, archive_name, is_directory in _archive_entries(
-                items, destination
-            ):
+            for source, archive_name, is_directory in entries:
+                if tracker is not None:
+                    tracker.begin_item(str(source), 0 if is_directory else source.stat().st_size)
                 if is_directory:
                     info = zipfile.ZipInfo(archive_name)
                     info.external_attr = (0o40755 << 16) | 0x10
                     archive.writestr(info, b"")
                     directories += 1
                 else:
-                    archive.write(source, archive_name)
+                    if tracker is None:
+                        archive.write(source, archive_name)
+                    else:
+                        info = zipfile.ZipInfo.from_file(source, arcname=archive_name)
+                        info.compress_type = zipfile.ZIP_DEFLATED
+                        info._compresslevel = max(0, min(9, request.compression_level))
+                        with source.open("rb") as src, archive.open(
+                            info, mode="w", force_zip64=True
+                        ) as dest:
+                            while True:
+                                tracker.checkpoint()
+                                block = src.read(1024 * 1024)
+                                if not block:
+                                    break
+                                dest.write(block)
+                                tracker.advance(len(block))
                     files += 1
                     try:
                         bytes_processed += source.stat().st_size
                     except OSError:
                         pass
+                if tracker is not None:
+                    tracker.complete_item()
         os.replace(temporary_path, destination)
+        if tracker is not None:
+            tracker.finish()
         temporary_path = None
     except ArchiveError:
         raise
@@ -225,6 +254,7 @@ def _is_zip_symlink(info: zipfile.ZipInfo) -> bool:
 def extract_zip_archive(
     archive_path: Path,
     request: ExtractZipRequest,
+    tracker: ProgressTracker | None = None,
 ) -> ArchiveResult:
     """Extract a ZIP without path traversal, symlinks, or partial file writes."""
     archive_path = Path(archive_path)
@@ -292,11 +322,20 @@ def extract_zip_archive(
                 extra = f" (+{len(collisions) - 3})" if len(collisions) > 3 else ""
                 raise ArchiveError(f"Existing file(s) would be replaced: {sample}{extra}")
 
+            if tracker is not None:
+                tracker.set_totals(
+                    items=len(targets),
+                    bytes_total=sum(info.file_size for info, _ in targets if not info.is_dir()),
+                )
             files = directories = bytes_processed = 0
             for info, target in targets:
+                if tracker is not None:
+                    tracker.begin_item(info.filename, 0 if info.is_dir() else info.file_size)
                 if info.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                     directories += 1
+                    if tracker is not None:
+                        tracker.complete_item()
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 handle, temporary_name = tempfile.mkstemp(
@@ -306,7 +345,16 @@ def extract_zip_archive(
                 temporary_path = Path(temporary_name)
                 try:
                     with archive.open(info, "r") as source, temporary_path.open("wb") as output:
-                        shutil.copyfileobj(source, output, length=1024 * 1024)
+                        if tracker is None:
+                            shutil.copyfileobj(source, output, length=1024 * 1024)
+                        else:
+                            while True:
+                                tracker.checkpoint()
+                                block = source.read(1024 * 1024)
+                                if not block:
+                                    break
+                                output.write(block)
+                                tracker.advance(len(block))
                     os.replace(temporary_path, target)
                     temporary_path = None
                     try:
@@ -316,6 +364,8 @@ def extract_zip_archive(
                         pass
                     files += 1
                     bytes_processed += info.file_size
+                    if tracker is not None:
+                        tracker.complete_item()
                 finally:
                     if temporary_path is not None:
                         temporary_path.unlink(missing_ok=True)
@@ -323,6 +373,8 @@ def extract_zip_archive(
         raise
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         raise ArchiveError(f"Could not extract ZIP: {exc}") from exc
+    if tracker is not None:
+        tracker.finish()
     return ArchiveResult(files, directories, bytes_processed)
 
 
