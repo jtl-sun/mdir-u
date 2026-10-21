@@ -377,7 +377,12 @@ class BaseApp(AIShellApp):
         self._archive_last_snapshot = state
         screen = self._archive_progress_screen
         if screen is not None and screen.is_mounted:
-            screen.update_snapshot(state)
+            try:
+                screen.update_snapshot(state)
+            except Exception as exc:
+                # A presentation failure must never abort or roll back a
+                # filesystem transaction running in the worker.
+                self.set_status(f"Progress display unavailable: {exc}")
         elif self._archive_busy:
             self.set_status(
                 f"{state.operation.title()} running: "
@@ -915,7 +920,12 @@ class BaseApp(AIShellApp):
         self._file_last_snapshot = state
         screen = self._file_operation_screen
         if screen is not None and screen.is_mounted:
-            screen.update_snapshot(state)
+            try:
+                screen.update_snapshot(state)
+            except Exception as exc:
+                # A presentation failure must never abort or roll back a
+                # filesystem transaction running in the worker.
+                self.set_status(f"Progress display unavailable: {exc}")
         elif self._file_operation_busy:
             self.set_status(
                 f"{state.operation.title()} running: "
