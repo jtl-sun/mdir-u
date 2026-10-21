@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -463,7 +464,7 @@ class BaseApp(AIShellApp):
         items: tuple[Path, ...],
         request: CreateZipRequest,
         source_side: str,
-        tracker: ProgressTracker,
+        tracker: ProgressTracker | None = None,
     ) -> None:
         """Compress without blocking navigation or screen redraws."""
         try:
@@ -592,7 +593,7 @@ class BaseApp(AIShellApp):
         archive_path: Path,
         request: ExtractZipRequest,
         source_side: str,
-        tracker: ProgressTracker,
+        tracker: ProgressTracker | None = None,
     ) -> None:
         """Extract without blocking keyboard and mouse input."""
         try:
@@ -886,16 +887,17 @@ class BaseApp(AIShellApp):
                 )
 
         try:
-            result = run_file_operation(
-                operation,
-                items,
-                destination,
+            options = dict(
                 new_name=new_name,
                 overwrite=overwrite,
                 cancel_event=cancel_event,
                 progress=report,
-                tracker=tracker,
             )
+            # Keep third-party/test adapters implementing the older callback
+            # interface usable during the migration to ProgressTracker.
+            if "tracker" in inspect.signature(run_file_operation).parameters:
+                options["tracker"] = tracker
+            result = run_file_operation(operation, items, destination, **options)
             fatal_error = None
         except Exception as exc:
             result = None
