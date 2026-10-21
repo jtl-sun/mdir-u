@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
@@ -114,16 +115,47 @@ def _copy_with_progress(source: str, target: str, tracker: ProgressTracker | Non
     if tracker is None:
         return shutil.copy2(source, target)
     tracker.begin_item(str(source), _estimate_size(Path(source)))
-    with open(source, "rb") as src, open(target, "wb") as dst:
-        while True:
-            tracker.checkpoint()
-            block = src.read(1024 * 1024)
-            if not block:
-                break
-            dst.write(block)
-            tracker.advance(len(block))
-    shutil.copystat(source, target)
+    target_path = Path(target)
+    # Never truncate an existing destination before an interruptible transfer.
+    temporary = target_path.with_name(f".{target_path.name}.mdir-copy-{uuid.uuid4().hex}")
+    try:
+        with open(source, "rb") as src, temporary.open("wb") as dst:
+            while True:
+                tracker.checkpoint()
+                block = src.read(1024 * 1024)
+                if not block:
+                    break
+                dst.write(block)
+                tracker.advance(len(block))
+        shutil.copystat(source, temporary)
+        tracker.checkpoint()
+        os.replace(temporary, target_path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return target
+
+
+def _move_with_rollback(source: Path, target: Path, tracker: ProgressTracker | None) -> None:
+    """Back up an overwritten destination until the move has succeeded."""
+    backup = None
+    if _path_exists(target):
+        backup = target.with_name(f".{target.name}.mdir-backup-{uuid.uuid4().hex}")
+        target.replace(backup)
+    try:
+        shutil.move(
+            str(source), str(target),
+            copy_function=lambda s, d: _copy_with_progress(s, d, tracker),
+        )
+    except Exception:
+        try:
+            if _path_exists(target):
+                _remove_existing_target(target)
+        finally:
+            if backup is not None and _path_exists(backup):
+                backup.replace(target)
+        raise
+    if backup is not None and _path_exists(backup):
+        _remove_existing_target(backup)
 
 
 def run_file_operation(
@@ -218,9 +250,7 @@ def run_file_operation(
                             _remove_existing_target(target)
                         _copy_with_progress(str(source), str(target), tracker)
                 else:
-                    if target_exists:
-                        _remove_existing_target(target)
-                    shutil.move(str(source), str(target), copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
+                    _move_with_rollback(source, target, tracker)
                 display_name = target_name
                 result.completed_pairs.append((source, target))
 
