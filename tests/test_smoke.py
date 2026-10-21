@@ -1197,7 +1197,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.pause(0.01)
 
                 moved = right_root / source.name
-                self.assertFalse(source.exists())
+                self.assertFalse(
+                    source.exists(),
+                    f"Move status={app.query_one('#status', Static).renderable!s}; "
+                    f"busy={app._file_operation_busy}; screen={type(app.screen).__name__}",
+                )
                 self.assertTrue(moved.exists())
 
                 app.set_active("right")
