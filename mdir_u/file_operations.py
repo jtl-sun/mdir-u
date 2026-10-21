@@ -142,10 +142,13 @@ def _move_with_rollback(source: Path, target: Path, tracker: ProgressTracker | N
         backup = target.with_name(f".{target.name}.mdir-backup-{uuid.uuid4().hex}")
         target.replace(backup)
     try:
-        shutil.move(
-            str(source), str(target),
-            copy_function=lambda s, d: _copy_with_progress(s, d, tracker),
-        )
+        if tracker is None:
+            shutil.move(str(source), str(target))
+        else:
+            shutil.move(
+                str(source), str(target),
+                copy_function=lambda s, d: _copy_with_progress(s, d, tracker),
+            )
     except Exception:
         try:
             if _path_exists(target):
@@ -244,7 +247,10 @@ def run_file_operation(
                             not target.is_dir() or target.is_symlink()
                         ):
                             _remove_existing_target(target)
-                        shutil.copytree(source, target, dirs_exist_ok=True, copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
+                        if tracker is None:
+                            shutil.copytree(source, target, dirs_exist_ok=True)
+                        else:
+                            shutil.copytree(source, target, dirs_exist_ok=True, copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
                     else:
                         if target_exists and target.is_dir():
                             _remove_existing_target(target)
