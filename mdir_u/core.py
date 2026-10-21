@@ -1973,6 +1973,7 @@ class MDir(App):
         Binding("f9", "drive", "Drive", id="mdir.drive"),
         Binding("f10", "options", "Option"),
         Binding("ctrl+f", "search", "Find", show=False, id="mdir.search"),
+        Binding("ctrl+alt+p", "show_progress", "Progress", show=False, id="mdir.show_progress"),
         Binding("ctrl+shift+f", "mindex", "mIndex", show=False, id="mdir.mindex"),
         Binding("ctrl+shift+d", "find_duplicates", "Duplicates", show=False, id="mdir.duplicates"),
         Binding("ctrl+shift+c", "compare_folders", "Compare", show=False, id="mdir.compare"),
