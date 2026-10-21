@@ -175,7 +175,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
         text-wrap: nowrap;
     }
     #file_operation_actions { height: 3; margin-top: 1; align-horizontal: right; }
-    #file_operation_pause, #file_operation_cancel { min-width: 12; }
+    #file_operation_pause, #file_operation_cancel, #file_operation_background { min-width: 12; }
     """
 
     def __init__(self, operation: str, total: int,
@@ -210,6 +210,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
             with Horizontal(id="file_operation_actions"):
                 yield Button("Pause", id="file_operation_pause")
                 yield Button("Cancel", id="file_operation_cancel")
+                yield Button("Background", id="file_operation_background")
 
     def on_mount(self) -> None:
         self.query_one("#file_operation_cancel", Button).focus()
@@ -278,6 +279,14 @@ class FileOperationProgressScreen(ModalScreen[None]):
     def cancel_clicked(self, event: Button.Pressed) -> None:
         event.stop()
         self.request_cancel()
+
+    @on(Button.Pressed, "#file_operation_background")
+    def background_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(None)
+        self.app.set_status(
+            f"{self.operation} continues in background. Ctrl+Alt+P shows progress."
+        )
 
     @on(Button.Pressed, "#file_operation_pause")
     def pause_clicked(self, event: Button.Pressed) -> None:
