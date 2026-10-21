@@ -839,7 +839,7 @@ class BaseApp(AIShellApp):
         self._file_last_snapshot = None
         self.push_screen(screen)
         self.set_status(f"{operation.title()} started: {len(items):,} item(s).")
-        self.call_after_refresh(
+        screen.call_after_refresh(
             self._run_file_operation_in_background,
             operation,
             items,
