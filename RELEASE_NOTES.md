@@ -7,7 +7,7 @@
 - Retained the existing button labels, colors, order, keyboard shortcuts and file operations.
 - No new settings or menus. The layout change is deliberately minimal.
 
-Close and reopen mDIR after updating. On Windows install the `mDIR-U-2.26.32.zip` release as usual; on Ubuntu use the corresponding DEB or source installer. The display remains dependent on the terminal's cell height and window size.
+Close mDIR before updating; install the `mDIR-U 2.26.32` Ubuntu DEB or source package, then reopen it. The display remains dependent on the terminal's cell height and window size.
 
 ---
 
