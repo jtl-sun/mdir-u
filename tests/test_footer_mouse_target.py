@@ -26,7 +26,9 @@ class FooterMouseTargetTests(unittest.IsolatedAsyncioTestCase):
                         break
                     await pilot.pause(0.05)
 
-                self.assertEqual(footer.size.height, 4)
+                # size is Textual's inner content area; region includes padding.
+                self.assertEqual(footer.size.height, 3)
+                self.assertEqual(footer.region.height, 4)
                 self.assertEqual(footer.styles.padding.bottom, 1)
                 keys = list(footer.query(FooterKey))
                 self.assertTrue(keys, "Function-key commands must remain visible")
