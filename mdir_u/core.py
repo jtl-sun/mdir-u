@@ -1942,7 +1942,19 @@ class MDir(App):
         padding-left: 1;
     }
 
-    Footer { background: #202830; }
+    /* Three-line mouse targets with one safe row above the OS taskbar. */
+    Footer {
+        background: #202830;
+        height: 4;
+        padding: 0 0 1 0;
+    }
+    FooterKey {
+        height: 3;
+        content-align: left middle;
+    }
+    Footer HorizontalGroup.binding-group, Footer KeyGroup {
+        height: 3;
+    }
     """
 
     BINDINGS = [
