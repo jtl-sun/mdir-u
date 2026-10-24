@@ -1,3 +1,16 @@
+# mDIR-U 2.26.32
+
+## More comfortable footer mouse controls
+
+- Made the existing bottom function-key command bar **three terminal rows high** so mouse clicks work across the entire button height, not just the text line.
+- Reserved **one blank row below the buttons**, keeping the mouse targets farther from the Windows taskbar / Ubuntu dock.
+- Retained the existing button labels, colors, order, keyboard shortcuts and file operations.
+- No new settings or menus. The layout change is deliberately minimal.
+
+Close mDIR before updating; install the `mDIR-U 2.26.32` Ubuntu DEB or source package, then reopen it. The display remains dependent on the terminal's cell height and window size.
+
+---
+
 # mDIR-U 2.26.31
 
 This release introduces the shared progress engine used by Windows mDIR-P and Ubuntu mDIR-U.
