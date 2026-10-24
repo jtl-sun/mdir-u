@@ -1,3 +1,8 @@
+# 2.26.32
+
+- Made footer command keys three rows tall and reserved one bottom safety row, improving mouse usability near the taskbar/dock.
+- Kept original shortcuts, colors, command order and existing features.
+
 # 2.26.31
 
 Shared cross-platform ProgressTracker for copy, move, delete, archive creation/extraction and search. Two progress bars, transfer rate and ETA, Pause/Resume, Cancel and Background with Ctrl+Alt+P reopen. Safety and regression coverage for chunked file operations and ZIP processing.
