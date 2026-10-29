@@ -400,6 +400,25 @@ class BaseApp(AIShellApp):
         if screen is not None and screen.is_mounted:
             screen.dismiss(None)
 
+    def action_smart_archive(self) -> None:
+        """F9: create ZIP from selection, or extract one selected ZIP."""
+        if getattr(self, "_archive_busy", False):
+            self.set_status("Another ZIP operation is already running.")
+            return
+        items = tuple(self.active.selected_items())
+        if not items:
+            self.set_status("Select a file or folder to compress, or a ZIP to extract.")
+            return
+        if len(items) == 1 and items[0].is_file():
+            suffix = items[0].suffix.lower()
+            if suffix == ".zip":
+                self.action_extract_zip()
+                return
+            if suffix in {".7z", ".rar", ".tar", ".gz", ".bz2", ".xz"}:
+                self.set_status("F9 extraction currently supports ZIP only (not RAR/7z/TAR).")
+                return
+        self.action_compress_zip()
+
     def action_compress_zip(self) -> None:
         """Create a ZIP from the active pane in the opposite pane by default."""
         source_side = self.active_side

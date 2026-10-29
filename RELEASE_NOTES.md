@@ -1,3 +1,12 @@
+# mDIR-U 2.26.44
+
+- F9 Zip/Unzip now routes to built-in ZIP creation for selected items or extraction for a single selected ZIP.
+- ZIP progress/cancel/overwrite protections remain and destination defaults to the opposite pane.
+- Move location chooser to Alt+F9; preserve Alt+F1/Alt+F2 location pickers.
+- When running on Windows, Alt+C/D/S and most Alt+drive letters switch the active drive. On native Ubuntu there are no drive letters; use the location picker and mount buttons.
+- Migrate any legacy saved Drive=F9 keymaps without discarding other remappings.
+- ZIP extraction is built-in; RAR/7z/TAR extraction remains unsupported.
+
 # mDIR-U 2.26.43
 
 - F6 RenMov pre-fills the original filename or folder name for one selected item, appended to the opposite pane's destination path.

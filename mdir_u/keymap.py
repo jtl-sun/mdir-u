@@ -47,7 +47,8 @@ KEY_DEFINITIONS = (
     KeyDefinition("New folder", "mkdir", "f7", True, "mdir.mkdir"),
     KeyDefinition("Delete", "delete", "f8", True, "mdir.delete"),
     KeyDefinition("Delete alias", "delete", "delete", True, "mdir.delete_alias"),
-    KeyDefinition("Drive", "drive", "f9", True, "mdir.drive"),
+    KeyDefinition("Zip/Unzip", "smart_archive", "f9", True, "mdir.smart_archive"),
+    KeyDefinition("Drive", "drive", "alt+f9", True, "mdir.drive"),
     KeyDefinition("Find", "search", "ctrl+f", True, "mdir.search"),
     KeyDefinition("mIndex", "mindex", "ctrl+shift+f", True, "mdir.mindex"),
     KeyDefinition("Duplicates", "find_duplicates", "ctrl+shift+d", True, "mdir.duplicates"),
@@ -155,6 +156,10 @@ def load_keymap(path: Path | None = None) -> dict[str, str]:
         value = json.loads(config_path.read_text(encoding="utf-8"))
         if not isinstance(value, dict):
             return {}
+        # Legacy Drive=F9 custom keymaps must not override smart ZIP.
+        if value.get("mdir.drive") == "f9":
+            value = dict(value)
+            value.pop("mdir.drive")
         return validate_keymap(value)
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return {}

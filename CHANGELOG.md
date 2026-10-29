@@ -1,3 +1,9 @@
+## 2.26.44
+
+- F9 smart Zip/Unzip using existing secure archive operations.
+- Alt+F9 location picker and Windows-only active-pane Alt+drive shortcuts.
+- Preserve old separate archive keys and migrate stored shortcuts.
+
 ## 2.26.43
 
 - Pre-fill F6 with target path and original name for single selections, directory only for multiple selections.

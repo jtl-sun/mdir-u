@@ -1,3 +1,9 @@
+## 2.26.44: F9 Zip/Unzip and direct Windows drive letters
+
+**F9 Zip/Unzip** compresses selected files and folders into a ZIP in the opposite pane. With a single selected `.zip`, F9 extracts it into the opposite pane using the existing secure archive dialogs, with progress, cancel and overwrite checks. `Alt+F5` and `Alt+F6` remain separate archive shortcuts. RAR, 7z and TAR extraction are not yet supported by the built-in ZIP engine.
+
+The location selector formerly on F9 is now **Alt+F9** (alongside existing Alt+F1/Alt+F2 pane location pickers). On **Windows** the Alt+letter shortcuts (e.g. Alt+C, Alt+D, Alt+S) change the active pane's drive immediately. On **Ubuntu**, filesystems are mounted at paths rather than assigned Windows letters: use **Alt+F9**, Alt+F1/Alt+F2, or the Root/Home/Mnt/Media buttons. Alt+T remains the thumbnail toggle. Existing user keymap settings are preserved.
+
 ## 2.26.43 - F6 filename prefill
 
 For a single selected file or directory, F6 RenMov now displays the destination folder **and its original name**. Edit the name to move and rename at the same time, or leave it unchanged to move with the original name. For multiple selections only the destination directory is shown, retaining all original selected names. The opposite pane stays the default destination and existing overwrite confirmations are preserved.

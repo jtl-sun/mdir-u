@@ -1988,7 +1988,8 @@ class MDir(App):
         Binding("f7", "mkdir", "MkDir", id="mdir.mkdir"),
         Binding("f8", "delete", "Delete", id="mdir.delete"),
         Binding("delete", "delete", "Delete", show=False, id="mdir.delete_alias"),
-        Binding("f9", "drive", "Drive", id="mdir.drive"),
+        Binding("f9", "smart_archive", "Zip/Unzip", id="mdir.smart_archive"),
+        Binding("alt+f9", "drive", "Drive", show=False, id="mdir.drive"),
         Binding("f10", "options", "Option"),
         Binding("ctrl+f", "search", "Find", show=False, id="mdir.search"),
         Binding("ctrl+alt+p", "show_progress", "Progress", show=False, id="mdir.show_progress"),
@@ -2015,6 +2016,18 @@ class MDir(App):
         Binding("shift+f10", "powershell_here", "Terminal", show=False, id="mdir.terminal"),
         Binding("alt+f1", "drive_left", "Left location", show=False, id="mdir.drive_left"),
         Binding("alt+f2", "drive_right", "Right location", show=False, id="mdir.drive_right"),
+    ] + [
+        # Drive-letter shortcuts are offered when running on Windows.
+        # Alt+T is already used by thumbnail mode.
+        Binding(
+            f"alt+{letter.lower()}",
+            f"quick_drive('{letter}')",
+            f"{letter}: drive",
+            show=False,
+            priority=True,
+        )
+        for letter in "ABCDEFGHIJKLMNOPQRSUVWXYZ"
+        if os.name == "nt"
     ]
 
     def action_ignore(self) -> None:
@@ -2797,6 +2810,17 @@ class MDir(App):
             ),
             confirmed,
         )
+
+    def action_quick_drive(self, letter: str) -> None:
+        """Alt+letter changes only the active pane on Windows."""
+        if os.name != "nt":
+            self.set_status("Drive letters are Windows-only; use Alt+F1/Alt+F2 for locations.")
+            return
+        drive_letter = str(letter).upper()
+        if len(drive_letter) != 1 or not drive_letter.isascii() or not drive_letter.isalpha():
+            self.set_status("Invalid drive letter.")
+            return
+        self.switch_pane_to_drive(self.active, drive_letter)
 
     def action_drive(self) -> None:
         self._prompt_drive(self.active)
