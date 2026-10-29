@@ -1,3 +1,10 @@
+# mDIR-U 2.26.45
+
+- When run on Windows, Alt+A through Alt+Z now directly select the corresponding available drive on the active pane.
+- Alt+T now selects drive T: on Windows, with thumbnail toggle moved to Ctrl+Alt+T.
+- Native Ubuntu retains Alt+T for thumbnails and mounted-location navigation via Alt+F9.
+- Preserve existing F9 Zip/Unzip and other file functions.
+
 # mDIR-U 2.26.44
 
 - F9 Zip/Unzip now routes to built-in ZIP creation for selected items or extraction for a single selected ZIP.

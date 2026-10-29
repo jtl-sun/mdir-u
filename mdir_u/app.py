@@ -157,7 +157,7 @@ class MDirApp(FastFileManagerApp):
     """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
         Binding("alt+down", "recent_folders", "Recent folders", show=False, priority=True),
-        Binding("alt+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
+        Binding("ctrl+alt+t" if os.name == "nt" else "alt+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
         Binding(
             "ctrl+f3",
             "toggle_preview",

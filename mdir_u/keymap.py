@@ -22,7 +22,9 @@ class KeyDefinition:
 
 
 KEY_DEFINITIONS = (
-    KeyDefinition("Thumbnail / List", "toggle_thumbnail", "alt+t", False),
+    KeyDefinition("Thumbnail / List", "toggle_thumbnail", "ctrl+alt+t" if os.name == "nt" else "alt+t", False),
+    *(KeyDefinition(f"Drive {letter}:", "quick_drive", f"alt+{letter.lower()}", False)
+      for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.name == "nt"),
     KeyDefinition("Switch pane", "switch_pane", "tab", False),
     KeyDefinition("Left pane", "focus_left", "left", False),
     KeyDefinition("Right pane", "focus_right", "right", False),

@@ -1,3 +1,7 @@
+## 2.26.45: complete Alt+A-Z Windows drive mappings
+
+Under Windows, every **Alt+A..Alt+Z** key combination changes only the selected pane to that letter's available drive. This includes Alt+T for T:; Thumbnail/List moves to **Ctrl+Alt+T on Windows** (Th button unchanged). On native Ubuntu drive letters are not used; **Alt+T still toggles thumbnails** and Alt+F9 still opens mounted locations.
+
 ## 2.26.44: F9 Zip/Unzip and direct Windows drive letters
 
 **F9 Zip/Unzip** compresses selected files and folders into a ZIP in the opposite pane. With a single selected `.zip`, F9 extracts it into the opposite pane using the existing secure archive dialogs, with progress, cancel and overwrite checks. `Alt+F5` and `Alt+F6` remain separate archive shortcuts. RAR, 7z and TAR extraction are not yet supported by the built-in ZIP engine.

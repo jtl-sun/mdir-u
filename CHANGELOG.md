@@ -1,3 +1,8 @@
+## 2.26.45
+
+- Complete Alt+A-Z Windows drive shortcuts, including previously excluded T:.
+- Resolve Alt+T conflict conditionally by moving thumbnails to Ctrl+Alt+T on Windows only.
+
 ## 2.26.44
 
 - F9 smart Zip/Unzip using existing secure archive operations.

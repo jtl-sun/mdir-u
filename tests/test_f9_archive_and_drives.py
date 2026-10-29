@@ -64,7 +64,7 @@ class F9ArchiveTests(unittest.TestCase):
         self.assertEqual(bindings["alt+f5"].action, "compress_zip")
         self.assertEqual(bindings["alt+f6"].action, "extract_zip")
         if os.name == "nt":
-            for letter in ("c", "d", "s"):
+            for letter in "abcdefghijklmnopqrstuvwxyz":
                 self.assertEqual(
                     bindings[f"alt+{letter}"].action, f"quick_drive('{letter.upper()}')"
                 )

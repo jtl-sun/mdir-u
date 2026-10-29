@@ -2017,8 +2017,8 @@ class MDir(App):
         Binding("alt+f1", "drive_left", "Left location", show=False, id="mdir.drive_left"),
         Binding("alt+f2", "drive_right", "Right location", show=False, id="mdir.drive_right"),
     ] + [
-        # Drive-letter shortcuts are offered when running on Windows.
-        # Alt+T is already used by thumbnail mode.
+        # Drive-letter shortcuts cover all A-Z letters when running on Windows.
+        # Move Alt+T thumbnail mode only on Windows to Ctrl+Alt+T.
         Binding(
             f"alt+{letter.lower()}",
             f"quick_drive('{letter}')",
@@ -2026,7 +2026,7 @@ class MDir(App):
             show=False,
             priority=True,
         )
-        for letter in "ABCDEFGHIJKLMNOPQRSUVWXYZ"
+        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         if os.name == "nt"
     ]
 

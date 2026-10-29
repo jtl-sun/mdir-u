@@ -101,7 +101,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.26.44")
+        self.assertEqual(__version__, "2.26.45")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
