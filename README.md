@@ -29,6 +29,17 @@ Then open **mDIR** from the application menu or type `u` in a terminal.
 mDIR-U is a tribute to **Choi Jung Han**, developer of the legendary MDIR
 file manager from the DOS era.
 
+## Project direction
+
+mDIR-U keeps the directness many users remember from DOS-era file managers while making file work easier for Linux users. The Windows companion, mDIR-P, remains comfortable in Windows Terminal and PowerShell. Across both editions, the modern core features are **AI/File**, **File View / Preview**, and **File Search**.
+
+As a matter of project identity and respect for the classic Mdir lineage, mDIR stays on the **V2.xx.xx** version series and does not adopt a V3.x version number.
+
+### Themes
+
+- **mDir theme** - the modern default.
+- **old_M_tema** - a DOS-Mdir-inspired black/cyan retro palette with classic extension color cues. Select it from **F10 -> Theme**; the choice is remembered across launches.
+
 ## Highlights
 
 - Recent Folders (`▼` / `Alt+Down`) on both panels with shared history
