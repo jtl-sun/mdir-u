@@ -1945,15 +1945,21 @@ class MDir(App):
     /* Three-line mouse targets with one safe row above the OS taskbar. */
     Footer {
         background: #202830;
+        width: 100%;
         height: 4;
         padding: 0 0 1 0;
+        overflow-x: auto;
     }
     FooterKey {
+        width: 1fr;
+        min-width: 10;
         height: 3;
-        content-align: left middle;
+        content-align: center middle;
+        border-right: solid #41464b;
     }
     Footer HorizontalGroup.binding-group, Footer KeyGroup {
         height: 3;
+        width: 1fr;
     }
     """
 

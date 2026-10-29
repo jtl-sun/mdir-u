@@ -1,3 +1,9 @@
+## mDIR-U 2.26.41: Full-width footer, active-pane emphasis, and vintage skins
+
+Ubuntu now offers the same **mDir theme**, **old_M_tema** (black/coral DOS Mdir), and **Norton Commander** (blue/cyan) themes as Windows. Change themes in **F10 -> Theme**; the choice remains persistent.
+
+The current working pane has a stronger selection and active border than the passive pane. Function-key targets stretch across the window at equal widths, with centered text, while preserving click targets and scrolling on narrow terminals. All Linux-native filesystem, preview, installer and .deb behavior remains unchanged.
+
 # mDIR-U
 
 **A fast, free dual-pane file manager for Ubuntu.** Classic MDIR speed,

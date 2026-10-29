@@ -1,3 +1,13 @@
+# mDIR-U 2.26.41
+
+Bring Ubuntu themes into parity with Windows: restore the classic black/coral original Mdir skin, add blue/cyan Norton Commander, and improve selection readability for both active and inactive panes. The active pane is now more prominent, with a brighter cursor and outline.
+
+Footer function-key buttons are equal-width, fill the full terminal width and center their labels. Click targets remain 3 rows high with safe bottom padding. Narrow terminals can scroll horizontally.
+
+Preserves Linux-native paths and operations, previews, settings and .deb installer.
+
+---
+
 # mDIR-U 2.26.36
 
 ## old_M_tema

@@ -1,3 +1,10 @@
+## 2.26.41
+
+- Port DOS Mdir and Norton Commander skins, including vivid selection colors, to Ubuntu.
+- Make active pane visually stronger than inactive pane.
+- Spread and center clickable footer keys across the full width.
+- Preserve Ubuntu installation, .deb packaging, file operations and settings.
+
 # 2.26.36
 
 - Added **old_M_tema**, a DOS-Mdir-inspired black/cyan retro theme, while keeping the modern default theme unchanged.

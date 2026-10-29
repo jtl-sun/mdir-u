@@ -35,6 +35,10 @@ class FooterMouseTargetTests(unittest.IsolatedAsyncioTestCase):
                 for key in keys:
                     self.assertEqual(key.size.height, 3, key.key)
 
+                widths = [key.size.width for key in keys]
+                self.assertLessEqual(max(widths) - min(widths), 1)
+                self.assertTrue(all(key.styles.content_align_horizontal == "center"
+                                    for key in keys))
                 options = next(key for key in keys if key.key == "f10")
                 # Click the lowest of the THREE rows, not the rendered text row.
                 await pilot.click(options, offset=(1, 2))

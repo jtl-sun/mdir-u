@@ -4,6 +4,7 @@ from time import monotonic
 from typing import Optional
 
 from rich.style import Style
+from rich.segment import Segment
 from ..selection_style import MARK_BACKGROUND, MARK_FOREGROUND
 
 from textual import events
@@ -30,8 +31,24 @@ class SlowRenameDataTable(legacy.MDirDataTable):
     def _render_cell(self, row_index, column_index, base_style, width, cursor=False, hover=False):
         # Preserve the marked background under the mouse; the cursor still
         # uses the brighter CSS highlight. Cell metadata remains unchanged.
-        return super()._render_cell(row_index, column_index, base_style, width,
-                                    cursor=cursor, hover=hover and not self._is_marked_row(row_index))
+        rendered = super()._render_cell(
+            row_index, column_index, base_style, width,
+            cursor=cursor, hover=hover and not self._is_marked_row(row_index),
+        )
+        if not cursor:
+            return rendered
+        # Rich per-extension foreground markup otherwise overrides the
+        # selected-row contrast even when CSS has the correct foreground.
+        from ..theme import selection_colors
+        pane = self._pane()
+        active = bool(pane is not None and pane.has_class("active"))
+        background, foreground = selection_colors(active=active)
+        selected = Style(color=foreground, bgcolor=background)
+        return [
+            [Segment(part.text, (part.style or Style()) + selected, part.control)
+             for part in line]
+            for line in rendered
+        ]
 
     BINDINGS = [
         binding

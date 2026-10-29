@@ -58,6 +58,7 @@ from .theme import (
     MDIR_THEME,
     OLD_M_THEME_NAME,
     OLD_M_THEME,
+    NORTON_THEME,
     install_file_colors,
 )
 from .ui.dialogs import CompactDriveScreen
@@ -188,6 +189,7 @@ class MDirApp(FastFileManagerApp):
         self.set_keymap(self.user_keymap)
         self.register_theme(MDIR_THEME)
         self.register_theme(OLD_M_THEME)
+        self.register_theme(NORTON_THEME)
         preferred_theme = load_theme_name(THEME_NAME)
         self.theme = (
             preferred_theme
@@ -272,10 +274,22 @@ class MDirApp(FastFileManagerApp):
             )
         return self._native_preview
 
+    def _sync_skin_classes(self) -> None:
+        """Keep the two pane frames in sync with the selected theme."""
+        for pane in (self.left, self.right):
+            pane.set_class(self.theme == OLD_M_THEME_NAME, "skin-original")
+            pane.set_class(self.theme == NORTON_THEME.name, "skin-norton")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self._sync_skin_classes()
+
     def _watch_theme(self, theme_name: str) -> None:
         """Apply and persist theme colors across Textual and Preview."""
         super()._watch_theme(theme_name)
         install_file_colors(self.current_theme)
+        if self.is_running:
+            self._sync_skin_classes()
         if getattr(self, "_theme_preference_ready", False):
             try:
                 save_theme_name(theme_name)
