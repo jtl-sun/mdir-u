@@ -1,3 +1,7 @@
+## 2.26.42 - F6 Rename/Move
+
+Ubuntu function-key bar now hides Parent, Space Mark and F2 Rename (their keyboard shortcuts remain active). F6 RenMov opens a single name/path input. A filename renames a single item in place, an existing folder moves selected items, and a full new filename moves+renames a single item. Opposite-pane folder is filled by default. Overwrite requires confirmation. Linux file operations, settings, themes and .deb packaging are unchanged.
+
 ## mDIR-U 2.26.41: Full-width footer, active-pane emphasis, and vintage skins
 
 Ubuntu now offers the same **mDir theme**, **old_M_tema** (black/coral DOS Mdir), and **Norton Commander** (blue/cyan) themes as Windows. Change themes in **F10 -> Theme**; the choice remains persistent.

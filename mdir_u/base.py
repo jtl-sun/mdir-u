@@ -53,6 +53,7 @@ from .ui.batch_rename import (
     apply_rename_pairs,
 )
 from .ui.prompt import CompactPromptScreen
+from .ui.renmov import plan_rename_move
 from .ui.viewer import CompactViewerScreen
 from .ui.archive import (
     ArchiveResult,
@@ -713,54 +714,100 @@ class BaseApp(AIShellApp):
         )
 
     def action_move(self) -> None:
-        items = self.active.selected_items()
+        """F6: rename a single item or move items to a chosen destination."""
+        items = tuple(self.active.selected_items())
         if not items:
             self.set_status("Nothing selected.")
             return
-        destination = self.passive.current_path
         source_side = self.active_side
-        message = move_confirmation_message(
-            items,
-            destination,
-            getattr(self.active, "metadata_by_path", None),
-        )
+        source_dir = self.active.current_path
+        initial = str(self.passive.current_path)
 
-        def confirmed(ok: bool) -> None:
-            if not ok:
-                self.set_status("Move cancelled.")
+        def requested(value: Optional[str]) -> None:
+            if value is None:
+                self.set_status("Rename/Move cancelled.")
                 return
-            selected = tuple(items)
-            conflicts = destination_conflicts(selected, destination)
-            if not conflicts:
-                self._start_file_operation(
-                    "move", selected, destination, source_side
-                )
+            try:
+                plan = plan_rename_move(value, items, source_dir)
+            except (ValueError, OSError) as exc:
+                self.set_status(f"Rename/Move: {exc}")
                 return
 
-            def overwrite_confirmed(overwrite_ok: bool) -> None:
-                if not overwrite_ok:
-                    self.set_status("Move cancelled; existing items kept.")
+            if plan.mode == "noop":
+                self.set_status("Nothing to rename or move.")
+                return
+
+            if plan.mode == "rename":
+                source = items[0]
+                assert plan.target is not None
+                target = plan.target
+                if target.exists() or target.is_symlink():
+                    self.set_status(f"Rename cancelled: '{target.name}' already exists.")
                     return
-                self._start_file_operation(
-                    "move",
-                    selected,
-                    destination,
-                    source_side,
-                    overwrite=True,
+                try:
+                    source.rename(target)
+                except OSError as exc:
+                    self.set_status(f"Rename failed: {exc}")
+                    return
+                self.active.marked.discard(source)
+                self.active.refresh_listing(keep_name=target.name)
+                self.passive.refresh_listing()
+                recorder = getattr(self, "record_operation", None)
+                if callable(recorder):
+                    recorder("rename", ((source, target),))
+                self.set_status(f"Renamed: {source.name} -> {target.name}")
+                return
+
+            destination = plan.destination
+            new_name = plan.new_name
+            message = move_confirmation_message(
+                list(items), destination,
+                getattr(self.active, "metadata_by_path", None),
+            )
+            if new_name:
+                message += f"\\nSave as: {new_name}"
+
+            def confirmed(ok: bool) -> None:
+                if not ok:
+                    self.set_status("Move cancelled.")
+                    return
+                conflicts = destination_conflicts(
+                    items, destination, new_name=new_name,
+                )
+                if not conflicts:
+                    self._start_file_operation(
+                        "move", items, destination, source_side, new_name=new_name,
+                    )
+                    return
+
+                def overwrite_confirmed(overwrite_ok: bool) -> None:
+                    if not overwrite_ok:
+                        self.set_status("Move cancelled; existing items kept.")
+                        return
+                    self._start_file_operation(
+                        "move", items, destination, source_side,
+                        new_name=new_name, overwrite=True,
+                    )
+
+                self.push_screen(
+                    self.CONFIRM_SCREEN(
+                        overwrite_confirmation_message("move", conflicts),
+                        title="Overwrite warning",
+                        compact=True,
+                    ),
+                    overwrite_confirmed,
                 )
 
             self.push_screen(
-                self.CONFIRM_SCREEN(
-                    overwrite_confirmation_message("move", conflicts),
-                    title="Overwrite warning",
-                    compact=True,
-                ),
-                overwrite_confirmed,
+                self.CONFIRM_SCREEN(message, title="Rename/Move"),
+                confirmed,
             )
 
         self.push_screen(
-            self.CONFIRM_SCREEN(message, title="Move"),
-            confirmed,
+            self.PROMPT_SCREEN(
+                "F6 Rename/Move - filename or destination path:", initial,
+            ),
+            requested,
         )
 
     def action_delete(self) -> None:

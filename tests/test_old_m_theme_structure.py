@@ -33,7 +33,7 @@ class OldMThemeStructureTests(unittest.TestCase):
         match = re.search(r'__version__ = "([^"]+)"', version_text)
         self.assertIsNotNone(match)
         self.assertTrue(match.group(1).startswith("2."))
-        self.assertEqual(match.group(1), "2.26.41")
+        self.assertEqual(match.group(1), "2.26.42")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,10 @@
+# mDIR-U 2.26.42
+
+- Remove Parent, Space Mark and F2 Rename from footer without removing Backspace, Space or F2 actions.
+- F6 RenMov combines rename and move through one filename/destination prompt, defaulting to the opposite pane.
+- Protect against accidental overwrite, missing destination folders and moving a directory into itself.
+- Preserve Ubuntu-native file operations, user settings, themes and .deb packaging.
+
 # mDIR-U 2.26.41
 
 Bring Ubuntu themes into parity with Windows: restore the classic black/coral original Mdir skin, add blue/cyan Norton Commander, and improve selection readability for both active and inactive panes. The active pane is now more prominent, with a brighter cursor and outline.

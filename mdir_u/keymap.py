@@ -41,7 +41,7 @@ KEY_DEFINITIONS = (
     KeyDefinition("View", "view", "f3", True, "mdir.view"),
     KeyDefinition("Edit", "edit", "f4", True, "mdir.edit"),
     KeyDefinition("Copy", "copy", "f5", True, "mdir.copy"),
-    KeyDefinition("Move", "move", "f6", True, "mdir.move"),
+    KeyDefinition("Rename/Move", "move", "f6", True, "mdir.move"),
     KeyDefinition("ZIP", "compress_zip", "alt+f5", True, "mdir.compress_zip"),
     KeyDefinition("Unzip", "extract_zip", "alt+f6", True, "mdir.extract_zip"),
     KeyDefinition("New folder", "mkdir", "f7", True, "mdir.mkdir"),

@@ -100,7 +100,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('python" -P -c', installer_text)
 
     def test_version_and_desktop_icon_resource(self) -> None:
-        self.assertEqual(__version__, "2.26.41")
+        self.assertEqual(__version__, "2.26.42")
         icon = Path(__file__).parents[1] / "mdir_u" / "assets" / "mdir.png"
         self.assertTrue(icon.is_file())
         self.assertEqual(icon.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
@@ -1185,6 +1185,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.left.marked = {source}
                 app.action_move()
                 await pilot.pause()
+                self.assertIsInstance(app.screen, CompactPromptScreen)
+                await pilot.press("enter")  # Accept opposite pane as destination.
+                await pilot.pause()
                 self.assertEqual(
                     app.screen.focused.id,
                     "confirm_yes",
@@ -1268,7 +1271,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.left.marked = {source}
                 app.action_move()
                 await pilot.pause()
-                await pilot.press("enter")
+                await pilot.press("enter")  # Accept F6 destination field.
+                await pilot.pause()
+                await pilot.press("enter")  # Confirm move summary.
                 await pilot.pause()
                 self.assertIsInstance(app.screen, CompactConfirmScreen)
                 self.assertEqual(app.screen.dialog_title, "Overwrite warning")

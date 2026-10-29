@@ -1,3 +1,8 @@
+## 2.26.42
+
+- Simplify footer and add F6 combined name/destination input with safe move/rename resolution.
+- Keep existing F2/Space/Backspace bindings accessible, and preserve Linux packaging.
+
 ## 2.26.41
 
 - Port DOS Mdir and Norton Commander skins, including vivid selection colors, to Ubuntu.
