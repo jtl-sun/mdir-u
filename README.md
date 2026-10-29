@@ -1,3 +1,7 @@
+## 2.26.43 - F6 filename prefill
+
+For a single selected file or directory, F6 RenMov now displays the destination folder **and its original name**. Edit the name to move and rename at the same time, or leave it unchanged to move with the original name. For multiple selections only the destination directory is shown, retaining all original selected names. The opposite pane stays the default destination and existing overwrite confirmations are preserved.
+
 ## 2.26.42 - F6 Rename/Move
 
 Ubuntu function-key bar now hides Parent, Space Mark and F2 Rename (their keyboard shortcuts remain active). F6 RenMov opens a single name/path input. A filename renames a single item in place, an existing folder moves selected items, and a full new filename moves+renames a single item. Opposite-pane folder is filled by default. Overwrite requires confirmation. Linux file operations, settings, themes and .deb packaging are unchanged.

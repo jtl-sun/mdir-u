@@ -1,3 +1,11 @@
+# mDIR-U 2.26.43
+
+- F6 RenMov pre-fills the original filename or folder name for one selected item, appended to the opposite pane's destination path.
+- Multiple selections pre-fill only the destination directory.
+- A single folder with an existing same-named target is treated as a collision, never silently nested one level deeper.
+- Existing F2, Space and Backspace shortcuts and overwrite confirmation remain unchanged.
+- Preserve Ubuntu .deb package and Linux path handling.
+
 # mDIR-U 2.26.42
 
 - Remove Parent, Space Mark and F2 Rename from footer without removing Backspace, Space or F2 actions.

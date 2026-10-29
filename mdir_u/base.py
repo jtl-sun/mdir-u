@@ -53,7 +53,7 @@ from .ui.batch_rename import (
     apply_rename_pairs,
 )
 from .ui.prompt import CompactPromptScreen
-from .ui.renmov import plan_rename_move
+from .ui.renmov import default_rename_move_input, plan_rename_move
 from .ui.viewer import CompactViewerScreen
 from .ui.archive import (
     ArchiveResult,
@@ -721,14 +721,17 @@ class BaseApp(AIShellApp):
             return
         source_side = self.active_side
         source_dir = self.active.current_path
-        initial = str(self.passive.current_path)
+        initial = default_rename_move_input(items, self.passive.current_path)
 
         def requested(value: Optional[str]) -> None:
             if value is None:
                 self.set_status("Rename/Move cancelled.")
                 return
             try:
-                plan = plan_rename_move(value, items, source_dir)
+                plan = plan_rename_move(
+                    value, items, source_dir,
+                    default_target=Path(initial) if len(items) == 1 else None,
+                )
             except (ValueError, OSError) as exc:
                 self.set_status(f"Rename/Move: {exc}")
                 return

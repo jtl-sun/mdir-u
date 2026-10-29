@@ -1,3 +1,8 @@
+## 2.26.43
+
+- Pre-fill F6 with target path and original name for single selections, directory only for multiple selections.
+- Protect against accidental nesting for an existing same-named target directory.
+
 ## 2.26.42
 
 - Simplify footer and add F6 combined name/destination input with safe move/rename resolution.

@@ -15,7 +15,21 @@ class RenameMovePlan:
     target: Path | None
 
 
-def plan_rename_move(value: str, items: Sequence[Path], source_dir: Path) -> RenameMovePlan:
+def default_rename_move_input(items: Sequence[Path], destination: Path) -> str:
+    """One selected item: complete destination name. Many: folder only."""
+    if not items:
+        raise ValueError("Select one or more items.")
+    folder = Path(destination)
+    return str(folder / Path(items[0]).name) if len(items) == 1 else str(folder)
+
+
+def plan_rename_move(
+    value: str,
+    items: Sequence[Path],
+    source_dir: Path,
+    *,
+    default_target: Path | None = None,
+) -> RenameMovePlan:
     """Bare filename renames one entry; a directory moves selected entries.
 
     A single entry can also be renamed *while moving* by providing a complete
@@ -34,7 +48,13 @@ def plan_rename_move(value: str, items: Sequence[Path], source_dir: Path) -> Ren
     candidate = candidate.resolve(strict=False)
     selected = tuple(Path(item).resolve(strict=False) for item in items)
 
-    if candidate.is_dir():
+    # The suggested target may already be a directory. Treat the unchanged
+    # single-selection suggestion as a target, not a request to nest into it.
+    suggested_target = (
+        len(selected) == 1 and default_target is not None
+        and candidate == Path(default_target).resolve(strict=False)
+    )
+    if candidate.is_dir() and not suggested_target:
         destination = candidate
         new_name = None
         target = None
