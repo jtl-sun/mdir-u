@@ -10,7 +10,9 @@ from . import core as legacy
 from .selection_style import MARK_PREFIX, MARK_FOREGROUND, CURSOR_BACKGROUND
 
 
-THEME_NAME = "total-commander"
+THEME_NAME = "mDir theme"
+OLD_M_THEME_NAME = "old_M_tema"
+MDIR_THEME_VARIABLE_DEFAULTS = {"mdir-cursor-background": CURSOR_BACKGROUND}
 
 BACKGROUND = "#202020"
 SURFACE = "#292929"
@@ -27,7 +29,7 @@ MARKED = "#f1cd69"
 ACCENT = "#7894a8"
 
 
-TOTAL_COMMANDER_THEME = Theme(
+MDIR_THEME = Theme(
     name=THEME_NAME,
     primary=ACCENT,
     secondary="#78838a",
@@ -50,6 +52,38 @@ TOTAL_COMMANDER_THEME = Theme(
         "footer-description-background": PANEL,
         "footer-description-foreground": FOREGROUND,
         "block-hover-background": "#3a3a3a",
+        "mdir-cursor-background": CURSOR_BACKGROUND,
+    },
+)
+
+
+# A respectful retro palette inspired by the classic DOS Mdir III interface.
+# Keep the modern mDIR-U layout and Linux behavior while restoring the black
+# workspace, cyan/teal chrome, strong cursor contrast and extension colors.
+OLD_M_THEME = Theme(
+    name=OLD_M_THEME_NAME,
+    primary="#00a6a6",
+    secondary="#007f80",
+    warning="#ffff55",
+    error="#ff5555",
+    success="#55ff55",
+    accent="#55ffff",
+    foreground="#f2f2f2",
+    background="#000000",
+    surface="#002f30",
+    panel="#006466",
+    boost="#00898b",
+    dark=True,
+    variables={
+        "footer-background": "#006466",
+        "footer-foreground": "#ffffff",
+        "footer-item-background": "#006466",
+        "footer-key-background": "#00a6a6",
+        "footer-key-foreground": "#ffff55",
+        "footer-description-background": "#006466",
+        "footer-description-foreground": "#ffffff",
+        "block-hover-background": "#003f40",
+        "mdir-cursor-background": "#a80000",
     },
 )
 
@@ -72,6 +106,17 @@ _current_foreground = FOREGROUND
 _current_folder = FOLDER
 _current_executable = EXECUTABLE
 _current_marked = MARKED
+_current_theme_name = THEME_NAME
+_current_extension_colors: dict[str, str] = {}
+
+
+def _file_color(path: Path) -> str:
+    """Return a theme-aware filename color without changing file semantics."""
+    extension = path.suffix.lower()
+    return _current_extension_colors.get(
+        extension,
+        _current_executable if extension in EXECUTABLE_EXTENSIONS else _current_foreground,
+    )
 
 
 def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
@@ -88,10 +133,8 @@ def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
         text.stylize(f"bold {MARK_FOREGROUND}")
     elif entry.is_directory:
         text.stylize(f"bold {_current_folder}")
-    elif entry.path.suffix.lower() in EXECUTABLE_EXTENSIONS:
-        text.stylize(_current_executable)
     else:
-        text.stylize(_current_foreground)
+        text.stylize(_file_color(entry.path))
     return text
 
 
@@ -103,10 +146,8 @@ def path_name_text(path: Path, marked: bool = False) -> Text:
         text.stylize(f"bold {MARK_FOREGROUND}")
     elif path.is_dir():
         text.stylize(f"bold {_current_folder}")
-    elif path.suffix.lower() in EXECUTABLE_EXTENSIONS:
-        text.stylize(_current_executable)
     else:
-        text.stylize(_current_foreground)
+        text.stylize(_file_color(path))
     return text
 
 
@@ -116,6 +157,8 @@ def install_file_colors(theme: Theme | None = None) -> None:
     global _current_folder
     global _current_executable
     global _current_marked
+    global _current_theme_name
+    global _current_extension_colors
 
     from .file_pane import EditablePathFilePane
 
@@ -124,19 +167,33 @@ def install_file_colors(theme: Theme | None = None) -> None:
         _current_folder = FOLDER
         _current_executable = EXECUTABLE
         _current_marked = MARKED
+        _current_theme_name = THEME_NAME
+        _current_extension_colors = {}
     else:
         colors = theme.to_color_system().generate()
         _current_foreground = colors.get("foreground", FOREGROUND)
         _current_folder = colors.get("accent", FOLDER)
         _current_executable = colors.get("success", EXECUTABLE)
         _current_marked = colors.get("warning", MARKED)
+        _current_theme_name = theme.name
+        if theme.name == OLD_M_THEME_NAME:
+            _current_extension_colors = {
+                ".exe": "#55ff55",
+                ".msi": "#55ff55",
+                ".com": "#55ffff",
+                ".bat": "#ffff55",
+                ".cmd": "#ffff55",
+                ".ps1": "#ff55ff",
+            }
+        else:
+            _current_extension_colors = {}
 
     legacy.PARENT_DIRECTORY_STYLE = f"bold {_current_foreground}"
     legacy.file_name_text = path_name_text
     EditablePathFilePane._name_text = staticmethod(cached_name_text)
 
 
-TOTAL_COMMANDER_CSS = f"""
+MDIR_THEME_CSS = f"""
 Screen {{
     background: $background;
     color: $foreground;
@@ -345,8 +402,8 @@ DocumentPreviewPanel #document_preview_info {{
 }}
 """
 
-TOTAL_COMMANDER_CSS += f"""
+MDIR_THEME_CSS += f"""
 FilePane.active DataTable > .datatable--cursor {{
-    background: {CURSOR_BACKGROUND}; color: white; text-style: bold;
+    background: $mdir-cursor-background; color: white; text-style: bold;
 }}
 """

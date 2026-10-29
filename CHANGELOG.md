@@ -1,3 +1,11 @@
+# 2.26.36
+
+- Added **old_M_tema**, a DOS-Mdir-inspired black/cyan retro theme, while keeping the modern default theme unchanged.
+- Added classic extension color cues in old_M_tema: EXE/MSI green, COM cyan, BAT/CMD yellow, and PS1 magenta.
+- Theme selection is now saved per user and restored on the next launch.
+- Kept Ubuntu-native Trash, terminal thumbnails, LibreOffice Preview, AI/File, File Search, and background progress behavior unchanged.
+- Documented the V2.xx.xx version policy and the cross-platform mDIR project direction.
+
 # 2.26.32
 
 - Made footer command keys three rows tall and reserved one bottom safety row, improving mouse usability near the taskbar/dock.
