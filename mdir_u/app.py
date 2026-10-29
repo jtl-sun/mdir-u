@@ -23,6 +23,7 @@ from .fast_app import FastFileManagerApp, LargeDirectoryFilePane
 from . import __version__
 from .thumbnail_view import ThumbnailGrid
 from .core import load_config_data
+from .theme_settings import load_theme_name, save_theme_name
 from .platform_support import (
     filesystem_usage_text,
     locations,
@@ -52,8 +53,11 @@ from .shortcuts import (
 from .keymap import load_keymap, save_keymap
 from .theme import (
     THEME_NAME,
-    TOTAL_COMMANDER_CSS,
-    TOTAL_COMMANDER_THEME,
+    MDIR_THEME_VARIABLE_DEFAULTS,
+    MDIR_THEME_CSS,
+    MDIR_THEME,
+    OLD_M_THEME_NAME,
+    OLD_M_THEME,
     install_file_colors,
 )
 from .ui.dialogs import CompactDriveScreen
@@ -149,7 +153,7 @@ class MDirApp(FastFileManagerApp):
     .selection-all { color: #e5a000; }
     .selection-none { color: #eeeeee; }
     .selection-invert { color: #ff5555; }
-    """ + TOTAL_COMMANDER_CSS
+    """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
         Binding("alt+down", "recent_folders", "Recent folders", show=False, priority=True),
         Binding("alt+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
@@ -174,6 +178,7 @@ class MDirApp(FastFileManagerApp):
         self._native_preview: Optional["NativePreviewController"] = None
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
+        self._theme_preference_ready = False
         super().__init__()
         self.thumbnail_modes = {"left": False, "right": False}
         self.thumbnail_grids = {}
@@ -181,8 +186,25 @@ class MDirApp(FastFileManagerApp):
         self.pane_hidden = {side: bool(config.get(f"{side}_show_hidden_system", self.show_hidden_system)) for side in ("left", "right")}
         self.user_keymap = load_keymap()
         self.set_keymap(self.user_keymap)
-        self.register_theme(TOTAL_COMMANDER_THEME)
-        self.theme = THEME_NAME
+        self.register_theme(MDIR_THEME)
+        self.register_theme(OLD_M_THEME)
+        preferred_theme = load_theme_name(THEME_NAME)
+        self.theme = (
+            preferred_theme
+            if self.get_theme(preferred_theme) is not None
+            else THEME_NAME
+        )
+        self._theme_preference_ready = True
+        try:
+            save_theme_name(self.theme)
+        except OSError:
+            pass
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        """Provide mDIR-specific CSS variables for built-in and custom themes."""
+        defaults = dict(super().get_theme_variable_defaults())
+        defaults.update(MDIR_THEME_VARIABLE_DEFAULTS)
+        return defaults
 
     def set_active(self, side, *, focus_table=True):
         super().set_active(side, focus_table=False)
@@ -251,9 +273,14 @@ class MDirApp(FastFileManagerApp):
         return self._native_preview
 
     def _watch_theme(self, theme_name: str) -> None:
-        """Apply theme colors to CSS, file cells, and native Preview."""
+        """Apply and persist theme colors across Textual and Preview."""
         super()._watch_theme(theme_name)
         install_file_colors(self.current_theme)
+        if getattr(self, "_theme_preference_ready", False):
+            try:
+                save_theme_name(theme_name)
+            except OSError:
+                pass
         if self.is_running:
             native_preview = self._native_preview
             if native_preview is not None:
@@ -1082,8 +1109,8 @@ def self_check() -> int:
     if app.preview_enabled:
         print("ERROR - Preview must start disabled.")
         return 1
-    if app.theme != THEME_NAME:
-        print("ERROR - default theme was not installed.")
+    if app.get_theme(THEME_NAME) is None or app.get_theme(OLD_M_THEME_NAME) is None:
+        print("ERROR - mDIR themes were not registered.")
         return 1
     print("OK - MDIR-U package is ready.")
     return 0
