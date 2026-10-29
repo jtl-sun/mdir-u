@@ -1,3 +1,26 @@
+# mDIR-U 2.26.36
+
+## old_M_tema
+
+This release adds the retro **old_M_tema** to mDIR-U's existing **F10 -> Theme** selector while preserving the current Linux-native file-management behavior.
+
+- Black file workspace with cyan/teal interface bars.
+- Strong red active-row cursor for clear DOS-style focus.
+- EXE/MSI green, COM cyan, BAT/CMD yellow, and PowerShell PS1 magenta.
+- AI/File, document Preview, File Search, dialogs and terminal thumbnails continue to follow the selected Textual theme.
+- The selected theme is stored per user and restored on the next launch.
+- The modern **mDir theme** remains the default.
+
+## Project identity
+
+mDIR-U remains in the **V2.xx.xx** version series and will not move to V3.x. The project keeps the direct, keyboard-friendly spirit of DOS-era Mdir while remaining a modern Linux file manager. Its core modern pillars are **AI/File**, **File View / Preview**, and **File Search**.
+
+mDIR-U 2.26.32 already contains the taller mouse-friendly footer and the unified background progress engine. Windows-only UAC, Windows Terminal profile, and desktop progress-window behavior are intentionally not copied into the Ubuntu edition.
+
+Install on Ubuntu with the 2.26.36 Debian package or extract the source archive and run `bash install_ubuntu.sh`. Existing personal settings are preserved.
+
+---
+
 # mDIR-U 2.26.32
 
 ## More comfortable footer mouse controls
