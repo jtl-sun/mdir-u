@@ -493,11 +493,13 @@ FilePane.skin-light.active .pane_footer {{
 
 /* Faded data in the passive pane; bright names and extension colors in the
    working pane.  Do not fade the selection highlight on the active side. */
+FilePane.skin-modern DataTable,
 FilePane.skin-original DataTable,
 FilePane.skin-norton DataTable,
 FilePane.skin-light DataTable {{
     text-opacity: 72%;
 }}
+FilePane.skin-modern.active DataTable,
 FilePane.skin-original.active DataTable,
 FilePane.skin-norton.active DataTable,
 FilePane.skin-light.active DataTable {{
