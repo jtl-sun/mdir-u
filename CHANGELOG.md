@@ -1,3 +1,9 @@
+## 2.26.47
+
+- Modernize classic theme name to Old-MDIR, with saved preference migration.
+- Make the active pane visually vivid and inactive pane muted across all themes.
+- Add regression tests for theme colors and persisted name migration.
+
 ## 2.26.46
 
 - Deeper black active file pane and softer charcoal inactive pane in default mDir dark theme.

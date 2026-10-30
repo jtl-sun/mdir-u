@@ -11,7 +11,7 @@ from .selection_style import MARK_FOREGROUND, MARK_PREFIX, CURSOR_BACKGROUND
 
 
 THEME_NAME = "mDir theme"
-OLD_M_THEME_NAME = "old_M_tema"
+OLD_M_THEME_NAME = "Old-MDIR"
 NORTON_THEME_NAME = "Norton Commander"
 
 # Explicit colors keep selected filenames legible even when Rich Text supplies
@@ -407,6 +407,101 @@ FilePane.skin-modern.active DataTable > .datatable--fixed,
 FilePane.skin-modern.active .pane_info,
 FilePane.skin-modern.active .pane_footer {{
     background: #191919;
+}}
+
+/* Strong active/quiet passive distinction in every classic skin.  The
+   non-active pane is deliberately desaturated while remaining legible. */
+FilePane.skin-original,
+FilePane.skin-original DataTable,
+FilePane.skin-original DataTable:focus,
+FilePane.skin-original DataTable > .datatable--odd-row,
+FilePane.skin-original DataTable > .datatable--even-row,
+FilePane.skin-original DataTable > .datatable--fixed,
+FilePane.skin-original .pane_info,
+FilePane.skin-original .pane_footer {{
+    background: #202020;
+}}
+
+FilePane.skin-original.active,
+FilePane.skin-original.active DataTable,
+FilePane.skin-original.active DataTable:focus,
+FilePane.skin-original.active DataTable > .datatable--odd-row,
+FilePane.skin-original.active DataTable > .datatable--even-row,
+FilePane.skin-original.active DataTable > .datatable--fixed,
+FilePane.skin-original.active .pane_info,
+FilePane.skin-original.active .pane_footer {{
+    background: #000000;
+}}
+
+FilePane.skin-original {{
+    border: solid #327a7d;
+}}
+FilePane.skin-original.active {{
+    border: solid $mdir-active-border;
+}}
+
+FilePane.skin-norton,
+FilePane.skin-norton DataTable,
+FilePane.skin-norton DataTable:focus,
+FilePane.skin-norton DataTable > .datatable--odd-row,
+FilePane.skin-norton DataTable > .datatable--even-row,
+FilePane.skin-norton DataTable > .datatable--fixed,
+FilePane.skin-norton .pane_info,
+FilePane.skin-norton .pane_footer {{
+    background: #171752;
+}}
+
+FilePane.skin-norton.active,
+FilePane.skin-norton.active DataTable,
+FilePane.skin-norton.active DataTable:focus,
+FilePane.skin-norton.active DataTable > .datatable--odd-row,
+FilePane.skin-norton.active DataTable > .datatable--even-row,
+FilePane.skin-norton.active DataTable > .datatable--fixed,
+FilePane.skin-norton.active .pane_info,
+FilePane.skin-norton.active .pane_footer {{
+    background: #0000aa;
+}}
+
+FilePane.skin-norton {{
+    border: solid #3c6c9e;
+}}
+FilePane.skin-norton.active {{
+    border: solid $mdir-active-border;
+}}
+
+/* Retain the light skin's original active color and fade its passive pane. */
+FilePane.skin-light,
+FilePane.skin-light DataTable,
+FilePane.skin-light DataTable:focus,
+FilePane.skin-light DataTable > .datatable--odd-row,
+FilePane.skin-light DataTable > .datatable--even-row,
+FilePane.skin-light DataTable > .datatable--fixed,
+FilePane.skin-light .pane_info,
+FilePane.skin-light .pane_footer {{
+    background: #f0f0f0;
+}}
+FilePane.skin-light.active,
+FilePane.skin-light.active DataTable,
+FilePane.skin-light.active DataTable:focus,
+FilePane.skin-light.active DataTable > .datatable--odd-row,
+FilePane.skin-light.active DataTable > .datatable--even-row,
+FilePane.skin-light.active DataTable > .datatable--fixed,
+FilePane.skin-light.active .pane_info,
+FilePane.skin-light.active .pane_footer {{
+    background: #e0e0e0;
+}}
+
+/* Faded data in the passive pane; bright names and extension colors in the
+   working pane.  Do not fade the selection highlight on the active side. */
+FilePane.skin-original DataTable,
+FilePane.skin-norton DataTable,
+FilePane.skin-light DataTable {{
+    text-opacity: 72%;
+}}
+FilePane.skin-original.active DataTable,
+FilePane.skin-norton.active DataTable,
+FilePane.skin-light.active DataTable {{
+    text-opacity: 100%;
 }}
 
 FilePane DataTable > .datatable--header {{

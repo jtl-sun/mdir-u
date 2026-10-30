@@ -15,8 +15,14 @@ class ThemeSettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "theme.json"
             save_theme_name("old_M_tema", path)
-            self.assertEqual(load_theme_name("mDir theme", path), "old_M_tema")
+            self.assertEqual(load_theme_name("mDir theme", path), "Old-MDIR")
             self.assertFalse(path.with_suffix(".json.tmp").exists())
+
+    def test_new_name_is_preserved_without_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "theme.json"
+            save_theme_name("Old-MDIR", path)
+            self.assertEqual(load_theme_name("mDir theme", path), "Old-MDIR")
 
     def test_invalid_setting_uses_default(self):
         with tempfile.TemporaryDirectory() as directory:

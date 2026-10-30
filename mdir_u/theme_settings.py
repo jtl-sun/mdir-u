@@ -22,7 +22,8 @@ def load_theme_name(default: str, path: Path | None = None) -> str:
     if isinstance(value, dict):
         name = value.get("theme")
         if isinstance(name, str) and name.strip():
-            return name.strip()
+            # Preserve users' previously selected old_M_tema preference.
+            return "Old-MDIR" if name.strip() == "old_M_tema" else name.strip()
     return default
 
 

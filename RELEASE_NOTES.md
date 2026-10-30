@@ -1,3 +1,10 @@
+# mDIR-U 2.26.47
+
+- Rename old_M_tema to Old-MDIR, transparently migrating previously saved theme choices.
+- Apply a clear working/passive pane distinction in mDir dark, Old-MDIR, Norton Commander and Textual Light.
+- Fade passive text and use a muted pane background while keeping active selection strong and readable.
+- Preserve Linux-native file operations, Ctrl+T thumbnails, user settings and .deb installation.
+
 # mDIR-U 2.26.46
 
 - Fix inverted active/inactive pane brightness in the mDir dark theme: active #191919, inactive #292929.

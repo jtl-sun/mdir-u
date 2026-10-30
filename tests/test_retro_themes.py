@@ -10,6 +10,7 @@ class RetroThemeTests(unittest.TestCase):
 
     def test_registered_colors(self):
         self.assertEqual(MDIR_THEME.name, THEME_NAME)
+        self.assertEqual(OLD_M_THEME_NAME, "Old-MDIR")
         self.assertEqual(OLD_M_THEME.name, OLD_M_THEME_NAME)
         self.assertEqual(OLD_M_THEME.background, "#000000")
         self.assertEqual(NORTON_THEME.name, NORTON_THEME_NAME)

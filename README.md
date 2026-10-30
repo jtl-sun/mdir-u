@@ -1,3 +1,9 @@
+## 2.26.47 - Old-MDIR naming and active-pane focus for every theme
+
+The old `old_M_tema` theme has been renamed **Old-MDIR**. A saved old theme choice continues to work through automatic name migration without deleting user settings.
+
+Across mDir dark, **Old-MDIR**, Norton Commander, and Textual Light, the active pane stays vivid with its native border and highlighted selection, while the inactive pane becomes muted with softer text and a distinguishable list background. Tab or mouse click changes the active side without affecting file management. The signature DOS color schemes remain intact.
+
 ## 2.26.46 - Dark active pane and Ctrl+T Thumbnail/List
 
 The standard mDir dark theme now displays the **active** file pane as deep black (#191919), while the inactive pane uses softer charcoal (#292929). Selection and focus colors remain distinct. This applies to the DataTable's focused/unfocused list surfaces and pane information areas; both DOS retro skins are unchanged.

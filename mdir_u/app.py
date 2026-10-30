@@ -280,6 +280,7 @@ class MDirApp(FastFileManagerApp):
             pane.set_class(self.theme == THEME_NAME, "skin-modern")
             pane.set_class(self.theme == OLD_M_THEME_NAME, "skin-original")
             pane.set_class(self.theme == NORTON_THEME.name, "skin-norton")
+            pane.set_class(self.theme == "textual-light", "skin-light")
 
     def on_mount(self) -> None:
         super().on_mount()
