@@ -384,6 +384,31 @@ FilePane.skin-norton DataTable > .datatable--fixed {{
     background: $mdir-list-background;
 }}
 
+/* mDir dark skin: active pane is deep black, inactive is charcoal.
+   Explicit table row and :focus rules prevent the focused DataTable
+   from reverting to Textual's lighter $surface background. */
+FilePane.skin-modern,
+FilePane.skin-modern DataTable,
+FilePane.skin-modern DataTable:focus,
+FilePane.skin-modern DataTable > .datatable--odd-row,
+FilePane.skin-modern DataTable > .datatable--even-row,
+FilePane.skin-modern DataTable > .datatable--fixed,
+FilePane.skin-modern .pane_info,
+FilePane.skin-modern .pane_footer {{
+    background: #292929;
+}}
+
+FilePane.skin-modern.active,
+FilePane.skin-modern.active DataTable,
+FilePane.skin-modern.active DataTable:focus,
+FilePane.skin-modern.active DataTable > .datatable--odd-row,
+FilePane.skin-modern.active DataTable > .datatable--even-row,
+FilePane.skin-modern.active DataTable > .datatable--fixed,
+FilePane.skin-modern.active .pane_info,
+FilePane.skin-modern.active .pane_footer {{
+    background: #191919;
+}}
+
 FilePane DataTable > .datatable--header {{
     background: $surface-lighten-1;
     color: $foreground;

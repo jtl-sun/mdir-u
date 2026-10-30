@@ -1,3 +1,11 @@
+# mDIR-U 2.26.46
+
+- Fix inverted active/inactive pane brightness in the mDir dark theme: active #191919, inactive #292929.
+- Apply contrast to list backgrounds, focused/unfocused DataTable rows and pane details while keeping the highlighted selection and active outline.
+- Preserve classic Original/Norton skins.
+- Standardize the Thumbnail/List shortcut to Ctrl+T for both Ubuntu and Windows.
+- Preserve user settings, ZIP operations and installation.
+
 # mDIR-U 2.26.45
 
 - When run on Windows, Alt+A through Alt+Z now directly select the corresponding available drive on the active pane.

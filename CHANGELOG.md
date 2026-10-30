@@ -1,3 +1,8 @@
+## 2.26.46
+
+- Deeper black active file pane and softer charcoal inactive pane in default mDir dark theme.
+- Use Ctrl+T for Thumbnail/List; preserve Th control.
+
 ## 2.26.45
 
 - Complete Alt+A-Z Windows drive shortcuts, including previously excluded T:.

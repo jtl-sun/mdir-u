@@ -1,3 +1,9 @@
+## 2.26.46 - Dark active pane and Ctrl+T Thumbnail/List
+
+The standard mDir dark theme now displays the **active** file pane as deep black (#191919), while the inactive pane uses softer charcoal (#292929). Selection and focus colors remain distinct. This applies to the DataTable's focused/unfocused list surfaces and pane information areas; both DOS retro skins are unchanged.
+
+On Ubuntu, press **Ctrl+T** to toggle Thumbnail / List in the active pane (instead of Alt+T). On Windows, Alt+T still switches to T: drive while Ctrl+T toggles thumbnails. The Th button continues to work.
+
 ## 2.26.45: complete Alt+A-Z Windows drive mappings
 
 Under Windows, every **Alt+A..Alt+Z** key combination changes only the selected pane to that letter's available drive. This includes Alt+T for T:; Thumbnail/List moves to **Ctrl+Alt+T on Windows** (Th button unchanged). On native Ubuntu drive letters are not used; **Alt+T still toggles thumbnails** and Alt+F9 still opens mounted locations.

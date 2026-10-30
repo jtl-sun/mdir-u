@@ -76,7 +76,7 @@ class ThumbnailTests(unittest.IsolatedAsyncioTestCase):
             marked = set(pane.marked)
             await self.pilot.hover(grid, offset=(1, 20))
             self.assertEqual(pane.marked, marked)
-            await self.pilot.press('alt+t')
+            await self.pilot.press('ctrl+t')
             self.assertTrue(pane.table.display)
             self.assertEqual(pane.marked, marked)
 

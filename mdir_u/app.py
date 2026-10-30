@@ -157,7 +157,7 @@ class MDirApp(FastFileManagerApp):
     """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
         Binding("alt+down", "recent_folders", "Recent folders", show=False, priority=True),
-        Binding("ctrl+alt+t" if os.name == "nt" else "alt+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
+        Binding("ctrl+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
         Binding(
             "ctrl+f3",
             "toggle_preview",
@@ -277,6 +277,7 @@ class MDirApp(FastFileManagerApp):
     def _sync_skin_classes(self) -> None:
         """Keep the two pane frames in sync with the selected theme."""
         for pane in (self.left, self.right):
+            pane.set_class(self.theme == THEME_NAME, "skin-modern")
             pane.set_class(self.theme == OLD_M_THEME_NAME, "skin-original")
             pane.set_class(self.theme == NORTON_THEME.name, "skin-norton")
 
