@@ -1,3 +1,8 @@
+## 2.26.48
+
+- Ordered 24-theme palette with mDir theme (basic) first.
+- New-installation default Basic with safe migrations for old theme identifiers.
+
 ## 2.26.47
 
 - Modernize classic theme name to Old-MDIR, with saved preference migration.

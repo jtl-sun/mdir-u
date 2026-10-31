@@ -1,3 +1,10 @@
+# mDIR-U 2.26.48
+
+- Set mDir theme (basic) as the new-installation/default theme.
+- Show the 24 built-in and mDIR themes in the precise user-specified order, not alphabetical order.
+- Keep search/filtering, theme persistence and old saved-name compatibility.
+- Preserve all Ubuntu file operations, focus styling, Ctrl+T thumbnails and Debian installation.
+
 # mDIR-U 2.26.47
 
 - Rename old_M_tema to Old-MDIR, transparently migrating previously saved theme choices.

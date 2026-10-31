@@ -1,3 +1,9 @@
+## 2.26.48 - 24-theme menu order and new Basic default
+
+The **F10 > Theme** searchable list now displays the 24 available themes in the requested order: first **mDir theme (basic)**, **Old-MDIR**, **Norton Commander**, then the 21 Textual built-in themes, from ansi-dark to tokyo-night.
+
+**mDir theme (basic)** is the default for a fresh installation or missing/invalid preference. An existing user-selected theme remains selected across updates. Historical saved names `mDir theme` and `old_M_tema` are transparently migrated to `mDir theme (basic)` and `Old-MDIR`.
+
 ## 2.26.47 - Old-MDIR naming and active-pane focus for every theme
 
 The old `old_M_tema` theme has been renamed **Old-MDIR**. A saved old theme choice continues to work through automatic name migration without deleting user settings.

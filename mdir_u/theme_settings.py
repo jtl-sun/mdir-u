@@ -23,7 +23,11 @@ def load_theme_name(default: str, path: Path | None = None) -> str:
         name = value.get("theme")
         if isinstance(name, str) and name.strip():
             # Preserve users' previously selected old_M_tema preference.
-            return "Old-MDIR" if name.strip() == "old_M_tema" else name.strip()
+            aliases = {
+                "old_M_tema": "Old-MDIR",
+                "mDir theme": "mDir theme (basic)",
+            }
+            return aliases.get(name.strip(), name.strip())
     return default
 
 

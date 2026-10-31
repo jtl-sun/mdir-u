@@ -10,7 +10,7 @@ from . import core as legacy
 from .selection_style import MARK_FOREGROUND, MARK_PREFIX, CURSOR_BACKGROUND
 
 
-THEME_NAME = "mDir theme"
+THEME_NAME = "mDir theme (basic)"
 OLD_M_THEME_NAME = "Old-MDIR"
 NORTON_THEME_NAME = "Norton Commander"
 

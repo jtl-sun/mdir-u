@@ -24,6 +24,8 @@ from . import __version__
 from .thumbnail_view import ThumbnailGrid
 from .core import load_config_data
 from .theme_settings import load_theme_name, save_theme_name
+from textual.command import CommandPalette
+from .theme_order import OrderedThemeProvider
 from .platform_support import (
     filesystem_usage_text,
     locations,
@@ -285,6 +287,15 @@ class MDirApp(FastFileManagerApp):
     def on_mount(self) -> None:
         super().on_mount()
         self._sync_skin_classes()
+
+    def search_themes(self) -> None:
+        """Show the 24 themes in the user-specified order."""
+        self.push_screen(
+            CommandPalette(
+                providers=[OrderedThemeProvider],
+                placeholder="Search for themes…",
+            ),
+        )
 
     def _watch_theme(self, theme_name: str) -> None:
         """Apply and persist theme colors across Textual and Preview."""
