@@ -7,19 +7,41 @@ from textual.widgets import Input
 
 
 class ThinCursorInput(Input):
-    """Input using the terminal's zero-width steady insertion bar."""
+    """Input that uses the terminal's zero-width, steady insertion bar.
 
+    The previous implementation inserted a real ``│`` character into the
+    rendered value whenever Textual's cursor blink was on.  That extra terminal
+    cell shifted every character after the cursor twice per second, which made
+    the filename appear to expand and contract while it was being edited.
+
+    Windows Terminal supports DECSCUSR, so the real terminal cursor can be a
+    steady vertical bar without adding a cell to the filename.  The rendered
+    text consequently has exactly the same width with the cursor on or off.
+    """
+
+    # Use regular terminal glyphs in filename inputs to match file panes.
+    # Bold can use different glyph metrics in Windows Terminal.
+    DEFAULT_CSS = """
+    ThinCursorInput {
+        text-style: none;
+    }
+    ThinCursorInput:focus {
+        text-style: none;
+    }
+    """
     _STEADY_BAR = "\x1b[6 q"
     _SHOW_CURSOR = "\x1b[?25h"
     _HIDE_CURSOR = "\x1b[?25l"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        # Textual's simulated cursor blink is not rendered.  Keeping it paused
+        # also avoids an unnecessary full input repaint every half second.
         self.cursor_blink = False
 
     @property
     def insertion_cursor_screen_offset(self) -> Offset:
-        """Return the insertion boundary rather than the next text cell."""
+        """Return the insertion boundary, not the following character cell."""
         x, y, _width, _height = self.content_region
         scroll_x, _ = self.scroll_offset
         return Offset(
@@ -63,7 +85,8 @@ class ThinCursorInput(Input):
                 self.get_component_rich_style("input--placeholder")
             )
         else:
-            content = self._value
+            # Never mutate the cached Rich Text while drawing a selection.
+            content = self._value.copy()
             value_length = len(self.value)
             suggestion = self._suggestion
             show_suggestion = (

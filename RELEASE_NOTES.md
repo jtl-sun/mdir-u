@@ -1,3 +1,14 @@
+# mDIR-U 2.26.49
+
+This release ports the applicable duplicate-review and ZIP improvements from mDIR-P.
+
+- Search the open directory recursively, see SHA-256 progress, cancel or continue in the background, and reopen progress or results with Ctrl+Alt+D.
+- Review exact and similar-image groups, record notes and export CSV. Similar image matching is limited to 5,000 images; inaccessible files are reported as scan warnings.
+- Explicitly confirm before moving exact duplicates to the freedesktop Trash. A pre-cleanup CSV is saved, each selected file and a surviving copy are SHA-256 checked, and KEEP, changed, similar-image or last-copy files are protected. Trash failure never falls back to permanent deletion. Requires `gio` and a working desktop Trash.
+- ZIP creation shows preparation progress, supports cancellation during enumeration, and reports destination errors. Popup inputs use regular weight and preserve selection text.
+
+Windows-only drive shortcuts and native windows are not part of this Ubuntu release.
+
 # mDIR-U 2.26.48
 
 - Set mDir theme (basic) as the new-installation/default theme.

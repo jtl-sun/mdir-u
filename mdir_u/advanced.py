@@ -471,24 +471,51 @@ def find_exact_duplicates(
     *,
     cancel_event: Event | None = None,
     progress: Callable[[int, str], None] | None = None,
+    scan_errors: list[str] | None = None,
+    scan_stats: dict[str, int] | None = None,
 ) -> list[list[Path]]:
-    """Find exact duplicates with size grouping before expensive SHA-256 reads."""
+    """Find exact duplicates recursively, reporting unreadable locations.
+
+    os.walk(root) includes root and every normal descendant directory.
+    Reparse/symlink directories are not followed to avoid cycles or escaping
+    the chosen root. Errors must not silently look like a complete scan.
+    """
+    if not root.is_dir():
+        raise NotADirectoryError(f"Cannot access search directory: {root}")
     by_size: dict[int, list[Path]] = {}
     scanned = 0
-    for directory, _, names in os.walk(root):
+
+    def walk_error(error: OSError) -> None:
+        if scan_errors is not None:
+            scan_errors.append(f"{error.filename or root}: {error.strerror or error}")
+
+    for directory, _, names in os.walk(root, onerror=walk_error, followlinks=False):
         for name in names:
             if cancel_event and cancel_event.is_set():
                 return []
             path = Path(directory) / name
             try:
                 by_size.setdefault(path.stat().st_size, []).append(path)
-            except OSError:
+            except OSError as exc:
+                if scan_errors is not None:
+                    scan_errors.append(f"{path}: {exc}")
                 continue
             scanned += 1
             if progress and scanned % 250 == 0:
-                progress(scanned, str(path.parent))
+                progress(scanned, f"scanning {path.parent}")
 
+    candidate_total = sum(len(paths) for paths in by_size.values() if len(paths) > 1)
+    if scan_stats is not None:
+        scan_stats["files_scanned"] = scanned
+        scan_stats["hash_candidates"] = candidate_total
+    if progress:
+        progress(
+            0,
+            f"Scan complete: {scanned:,} files. "
+            f"SHA-256 verification starting for {candidate_total:,} equal-size candidates.",
+        )
     by_digest: dict[tuple[int, str], list[Path]] = {}
+    hashed = 0
     for size, paths in by_size.items():
         if len(paths) < 2:
             continue
@@ -498,11 +525,27 @@ def find_exact_duplicates(
             digest = hashlib.sha256()
             try:
                 with path.open("rb") as stream:
-                    for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    while True:
+                        if cancel_event is not None and cancel_event.is_set():
+                            return []
+                        block = stream.read(1024 * 1024)
+                        if not block:
+                            break
                         digest.update(block)
-            except OSError:
+            except OSError as exc:
+                if scan_errors is not None:
+                    scan_errors.append(f"{path}: {exc}")
                 continue
+            hashed += 1
+            if progress and (hashed % 25 == 0 or hashed == 1 or hashed == candidate_total):
+                progress(
+                    hashed,
+                    f"SHA-256: {hashed:,}/{candidate_total:,} candidate files verified. "
+                    f"Current folder: {path.parent}",
+                )
             by_digest.setdefault((size, digest.hexdigest()), []).append(path)
+    if scan_stats is not None:
+        scan_stats["files_hashed"] = hashed
     return [paths for paths in by_digest.values() if len(paths) > 1]
 
 
@@ -565,6 +608,8 @@ def find_similar_images(
         by_dimensions.setdefault(dimensions, []).append(index)
     for indices in by_dimensions.values():
         for offset, first in enumerate(indices):
+            if cancel_event and cancel_event.is_set():
+                return []
             for second in indices[offset + 1 :]:
                 if (images[first][1] ^ images[second][1]).bit_count() <= max_distance:
                     union(first, second)

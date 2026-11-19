@@ -47,6 +47,8 @@ from .advanced import (
     safe_sync_directories,
 )
 from .ui.advanced import AdvancedResult, AdvancedResultsScreen
+from .ui.duplicate_review import DuplicateReviewScreen
+from .ui.duplicate_scan import DuplicateScanProgressScreen, duplicate_scan_status
 from .ui.batch_rename import (
     BatchRenameScreen,
     RenamePair,
@@ -239,6 +241,15 @@ class BaseApp(AIShellApp):
         self._macro_recording_name: str | None = None
         self._macro_recording_actions: list[MacroAction] = []
         self._file_index_path = data_dir / "mindex.sqlite3"
+        self._duplicate_review_path = data_dir / "duplicate_reviews.json"
+        self._duplicate_scan_cancel = None
+        self._duplicate_scan_screen = None
+        self._duplicate_scan_background = False
+        self._duplicate_scan_badge = ""
+        self._duplicate_scan_description = "Starting recursive file scan..."
+        self._duplicate_scan_count = 0
+        self._duplicate_scan_timer = None
+        self._duplicate_scan_ready = None
         super().__init__()
 
     def record_recent_folder(self, path: Path | str) -> None:
@@ -1271,69 +1282,277 @@ class BaseApp(AIShellApp):
         except Exception as exc:
             self.call_from_thread(self.set_status, f"mIndex failed: {exc}")
 
+    def _show_duplicate_review(
+        self,
+        root: Path,
+        rows: list[tuple[str, Path, int]],
+        exact_groups: int,
+        similar_groups: int,
+        source_side: str,
+        scan_warnings: list[str],
+        scan_stats: dict[str, int],
+    ) -> None:
+        """Open the read-only duplicate list and persist manual decisions only."""
+        def selected(path: Path | None) -> None:
+            if path is not None:
+                reveal = getattr(self, "_reveal_search_result", None)
+                if callable(reveal):
+                    reveal(path, source_side)
+            else:
+                self.set_active(source_side)
+
+        try:
+            review = DuplicateReviewScreen(
+                root, rows, exact_groups, similar_groups, self._duplicate_review_path,
+                scan_warnings=scan_warnings,
+                scan_stats=scan_stats,
+            )
+        except (ValueError, OSError) as exc:
+            # Never overwrite a malformed or inaccessible user review file.
+            self.set_status(f"Duplicate review manifest not loaded: {exc}")
+            return
+        self.push_screen(review, selected)
+
     def action_find_duplicates(self) -> None:
-        selected = self.active.selected_path()
-        root = selected if selected and selected.is_dir() else self.active.current_path
+        """Find candidate duplicates; do not change the discovered files."""
+        if (
+            getattr(self, "_duplicate_scan_cancel", None) is not None
+            or getattr(self, "_duplicate_scan_ready", None) is not None
+        ):
+            self.action_show_duplicate_progress()
+            return
+        # Duplicate Search always means the currently OPEN folder tree.
+        # A highlighted directory is only the cursor position, never the scan
+        # root (otherwise G:\ with a subfolder selected scans the subfolder).
+        root = self.active.current_path
         source_side = self.active_side
 
         def confirmed(ok: bool) -> None:
             if not ok:
                 return
-            self.set_status(f"Duplicate search: scanning {root} ...")
+            self._duplicate_scan_cancel = Event()
+            self._duplicate_scan_root = root
+            self._duplicate_scan_background = False
+            self._duplicate_scan_badge = ""
+            self._duplicate_scan_description = "Starting recursive file scan..."
+            self._duplicate_scan_count = 0
+            self._duplicate_scan_screen = DuplicateScanProgressScreen(
+                root, self._duplicate_scan_cancel
+            )
+            self.push_screen(self._duplicate_scan_screen)
+            self.set_status(f"Duplicate search: scanning recursively from {root} ...")
             self._run_duplicate_search(root, source_side)
 
         self.push_screen(
             self.CONFIRM_SCREEN(
-                f"Find exact duplicate files below?\n\n{root}\n\n"
-                "This only reads files and never deletes them.",
-                title="Duplicate finder",
+                f"Search this folder AND ALL subfolders?\n\n{root}\n\n"
+                "File contents are compared by SHA-256. The results let you "
+                "mark intentional copies, add notes and export full paths. "
+                "Nothing is deleted or moved.",
+                title="Safe Duplicate Review",
             ),
             confirmed,
         )
 
+    def set_status(self, text: str) -> None:
+        """Keep a concise background duplicate percentage visible during navigation."""
+        badge = getattr(self, "_duplicate_scan_badge", "")
+        if getattr(self, "_duplicate_scan_ready", None) is not None:
+            badge = "DUP SCAN COMPLETE [Ctrl+Alt+D: Results]"
+        elif not getattr(self, "_duplicate_scan_background", False):
+            badge = ""
+        if badge:
+            text = f"{badge} | {text}" if text else badge
+        super().set_status(text)
+
+    def _duplicate_scan_tick(self) -> None:
+        if self._duplicate_scan_background and self._duplicate_scan_cancel is not None:
+            self.set_status("")
+
+    def _background_duplicate_scan(self, screen: DuplicateScanProgressScreen) -> None:
+        """Dismiss only the progress modal; the worker keeps running."""
+        if screen is not self._duplicate_scan_screen or self._duplicate_scan_cancel is None:
+            return
+        self._duplicate_scan_background = True
+        self._duplicate_scan_screen = None
+        if screen.is_mounted:
+            screen.dismiss(None)
+        if self._duplicate_scan_timer is None:
+            self._duplicate_scan_timer = self.set_interval(2.0, self._duplicate_scan_tick)
+        self.set_status("Background search running. Ctrl+Alt+D shows progress.")
+
+    def action_show_duplicate_progress(self) -> None:
+        """Ctrl+Alt+D returns to live progress or opens completed results."""
+        ready = self._duplicate_scan_ready
+        if ready is not None:
+            self._duplicate_scan_ready = None
+            self._show_duplicate_review(*ready)
+            return
+        cancel_event = self._duplicate_scan_cancel
+        if cancel_event is None:
+            self.set_status("No background duplicate scan or saved results.")
+            return
+        screen = self._duplicate_scan_screen
+        if screen is not None and screen.is_mounted:
+            return
+        self._duplicate_scan_background = False
+        if self._duplicate_scan_timer is not None:
+            self._duplicate_scan_timer.stop()
+            self._duplicate_scan_timer = None
+        screen = DuplicateScanProgressScreen(
+            getattr(self, "_duplicate_scan_root", self.active.current_path),
+            cancel_event,
+        )
+        screen.update_progress(
+            self._duplicate_scan_count, self._duplicate_scan_description
+        )
+        self._duplicate_scan_screen = screen
+        self.push_screen(screen)
+
+    def _update_duplicate_scan_progress(self, count: int, phase: str) -> None:
+        """Update live progress and footer while preserving file-manager access."""
+        self._duplicate_scan_count = count
+        self._duplicate_scan_description = phase
+        self._duplicate_scan_badge = duplicate_scan_status(phase, count)
+        screen = self._duplicate_scan_screen
+        if screen is not None:
+            screen.update_progress(count, phase)
+        if self._duplicate_scan_background:
+            self.set_status("")
+        else:
+            self.set_status(f"Duplicate search: {phase}")
+
+    def _close_duplicate_scan_progress(self) -> None:
+        screen = self._duplicate_scan_screen
+        self._duplicate_scan_screen = None
+        self._duplicate_scan_cancel = None
+        self._duplicate_scan_background = False
+        self._duplicate_scan_badge = ""
+        if self._duplicate_scan_timer is not None:
+            self._duplicate_scan_timer.stop()
+            self._duplicate_scan_timer = None
+        if screen is not None and screen.is_mounted:
+            screen.dismiss(None)
+
+    def _abort_duplicate_scan(self, message: str) -> None:
+        self._close_duplicate_scan_progress()
+        self.set_status(message)
+        if "failed" in message.lower():
+            self.notify(message, severity="error", timeout=10)
+
+    def _present_duplicate_scan_results(
+        self,
+        root: Path,
+        rows: list[tuple[str, Path, int]],
+        exact_groups: int,
+        similar_groups: int,
+        source_side: str,
+        scan_warnings: list[str],
+        scan_stats: dict[str, int],
+    ) -> None:
+        """Show immediate results when foregrounded, or defer while in background."""
+        was_background = getattr(self, "_duplicate_scan_background", False)
+        self._close_duplicate_scan_progress()
+        if was_background:
+            self._duplicate_scan_ready = (
+                root, rows, exact_groups, similar_groups,
+                source_side, scan_warnings, scan_stats,
+            )
+            self.set_status(
+                f"Duplicate search COMPLETE: {exact_groups:,} exact groups; "
+                f"{similar_groups:,} similar groups. Ctrl+Alt+D opens results."
+            )
+            notify = getattr(self, "notify", None)
+            if callable(notify):
+                notify(
+                    "Duplicate search complete. Ctrl+Alt+D opens results.",
+                    timeout=8,
+                )
+        else:
+            self._show_duplicate_review(
+                root, rows, exact_groups, similar_groups, source_side,
+                scan_warnings, scan_stats,
+            )
+            self.set_status(
+                f"Duplicate search complete: {exact_groups:,} exact groups, "
+                f"{similar_groups:,} similar-image groups. Review results window opened."
+            )
+
     @work(thread=True, exclusive=True, group="mdir-duplicates", exit_on_error=False)
     def _run_duplicate_search(self, root: Path, source_side: str) -> None:
+        cancel_event = self._duplicate_scan_cancel
         try:
+            scan_warnings: list[str] = []
+            scan_stats: dict[str, int] = {}
             groups = find_exact_duplicates(
                 root,
-                progress=lambda count, path: self.call_from_thread(
-                    self.set_status,
-                    f"Duplicate search: scanned {count:,} files [{path}]",
+                cancel_event=cancel_event,
+                scan_errors=scan_warnings,
+                scan_stats=scan_stats,
+                progress=lambda count, phase: self.call_from_thread(
+                    self._update_duplicate_scan_progress, count, phase
                 ),
             )
-            similar_groups = find_similar_images(root)
-            rows = [
-                AdvancedResult(
-                    f"Group {group_number}",
-                    path.name,
-                    str(path.parent),
-                    legacy.human_size(path.stat().st_size),
-                    path,
+            if cancel_event is not None and cancel_event.is_set():
+                self.call_from_thread(
+                    self._abort_duplicate_scan,
+                    "Duplicate search cancelled. No files were changed.",
                 )
-                for group_number, group in enumerate(groups, start=1)
-                for path in group
-            ]
-            rows.extend(
-                AdvancedResult(
-                    f"Similar {group_number}",
-                    path.name,
-                    str(path.parent),
-                    "visual dHash",
-                    path,
-                )
-                for group_number, group in enumerate(similar_groups, start=1)
-                for path in group
-            )
+                return
             self.call_from_thread(
-                self._show_advanced_results,
-                "Exact duplicate files",
-                f"{len(groups):,} exact and {len(similar_groups):,} similar group(s), "
-                f"{len(rows):,} rows. No files were changed.",
+                self._update_duplicate_scan_progress,
+                scan_stats.get("files_hashed", 0),
+                "SHA-256 done. Comparing visually similar images (up to 5,000). "
+                "Results window opens after this step.",
+            )
+            similar_groups = find_similar_images(root, cancel_event=cancel_event)
+            if cancel_event is not None and cancel_event.is_set():
+                self.call_from_thread(
+                    self._abort_duplicate_scan,
+                    "Duplicate search cancelled. No files were changed.",
+                )
+                return
+            rows: list[tuple[str, Path, int]] = []
+            for index, group in enumerate(
+                sorted(groups, key=lambda paths: min(str(p).casefold() for p in paths)),
+                start=1,
+            ):
+                for path in sorted(group, key=lambda p: str(p).casefold()):
+                    try:
+                        size = path.stat().st_size
+                    except OSError:
+                        continue
+                    rows.append((f"Exact {index}", path, size))
+            for index, group in enumerate(
+                sorted(similar_groups, key=lambda paths: min(str(p).casefold() for p in paths)),
+                start=1,
+            ):
+                for path in sorted(group, key=lambda p: str(p).casefold()):
+                    try:
+                        size = path.stat().st_size
+                    except OSError:
+                        continue
+                    rows.append((f"Similar {index}", path, size))
+            if cancel_event is not None and cancel_event.is_set():
+                self.call_from_thread(
+                    self._abort_duplicate_scan,
+                    "Duplicate search cancelled. No files were changed.",
+                )
+                return
+            self.call_from_thread(
+                self._present_duplicate_scan_results,
+                root,
                 rows,
+                len(groups),
+                len(similar_groups),
                 source_side,
+                scan_warnings,
+                scan_stats,
             )
         except Exception as exc:
-            self.call_from_thread(self.set_status, f"Duplicate search failed: {exc}")
+            self.call_from_thread(
+                self._abort_duplicate_scan, f"Duplicate search failed: {exc}"
+            )
 
     def action_compare_folders(self) -> None:
         left, right, source_side = (

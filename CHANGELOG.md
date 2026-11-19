@@ -1,3 +1,11 @@
+## 2.26.49
+
+- Port recursive duplicate search, cancellable/background progress, paginated review, notes and CSV export from mDIR-P.
+- Require explicit confirmation, pre-cleanup CSV and SHA-256 re-verification before sending exact duplicates to the freedesktop Trash; retain a verified copy and never permanently delete on Trash failure.
+- Show incomplete-scan warnings, refresh reviewed groups after cleanup, and permit cancellation during image comparisons.
+- Port ZIP preparation progress, cancellation and destination error reporting, and regular-weight popup input fixes.
+- Preserve Linux Trash, paths, Ubuntu packaging and terminal previews. Windows-specific features are not included.
+
 ## 2.26.48
 
 - Ordered 24-theme palette with mDir theme (basic) first.

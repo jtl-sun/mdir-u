@@ -1,3 +1,16 @@
+## 2.26.49 - Duplicate review and ZIP reliability
+
+Duplicate Search now searches the open folder recursively, shows progress and
+can run in the background. Review groups and export a CSV before explicitly
+confirming individual or marked exact copies for the freedesktop Trash. Every
+removal is rechecked against a surviving SHA-256 match; similar images and KEEP
+files cannot be recycled. Install `gio` and verify your desktop Trash works;
+there is no permanent-delete fallback. Search reports unreadable files; visual
+matching is limited to 5,000 images. ZIP preparation now reports progress and
+supports cancellation. This release ports the applicable duplicate-review,
+ZIP and input fixes from mDIR-P 2.26.52–2.26.61; Windows-only drive and native
+window changes do not apply.
+
 ## 2.26.48 - 24-theme menu order and new Basic default
 
 The **F10 > Theme** searchable list now displays the 24 available themes in the requested order: first **mDir theme (basic)**, **Old-MDIR**, **Norton Commander**, then the 21 Textual built-in themes, from ansi-dark to tokyo-night.
@@ -305,6 +318,7 @@ Copy/Move batches only and never overwrite an existing target automatically.
 | --- | --- |
 | `Ctrl+Shift+F` | Search `mIndex`; prefix the term with `!` to rebuild |
 | `Ctrl+Shift+D` | Find exact and visually similar duplicates |
+| `Ctrl+Alt+D` | Reopen background duplicate progress or results |
 | `Ctrl+Shift+C` | Compare both current folder trees |
 | `Ctrl+Shift+Y` | Safe sync active pane to opposite pane |
 | `Ctrl+Z` | Undo Center |

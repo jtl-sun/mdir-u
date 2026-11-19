@@ -90,10 +90,14 @@ class CompactConfirmScreen(ModalScreen[bool]):
         title: str = "Confirm",
         *,
         compact: bool = False,
+        yes_label: str = "Yes",
+        cancel_label: str = "Cancel",
     ) -> None:
         super().__init__()
         self.message = message
         self.dialog_title = title
+        self.yes_label = yes_label
+        self.cancel_label = cancel_label
         lines = message.splitlines() or [message]
         longest = max((cell_len(line) for line in lines), default=20)
         self.preferred_width = max(
@@ -110,8 +114,8 @@ class CompactConfirmScreen(ModalScreen[bool]):
                 yield Button("X", id="confirm_close")
             yield Static(self.message, id="confirm_message")
             with Horizontal(id="confirm_actions"):
-                yield Button("Yes", id="confirm_yes", variant="error")
-                yield Button("Cancel", id="confirm_cancel")
+                yield Button(self.yes_label, id="confirm_yes", variant="error")
+                yield Button(self.cancel_label, id="confirm_cancel")
             yield Static(
                 "Enter/Y: Yes   N/Esc/X: Cancel", id="confirm_help"
             )

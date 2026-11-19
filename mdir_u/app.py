@@ -158,6 +158,7 @@ class MDirApp(FastFileManagerApp):
     .selection-invert { color: #ff5555; }
     """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
+        Binding("ctrl+alt+d", "show_duplicate_progress", "Duplicate progress/results", show=False, priority=True, id="mdir.duplicate-progress"),
         Binding("alt+down", "recent_folders", "Recent folders", show=False, priority=True),
         Binding("ctrl+t", "toggle_thumbnail", "Thumbnails", show=False, priority=True),
         Binding(
